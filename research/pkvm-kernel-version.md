@@ -26,6 +26,8 @@ pKVM의 원본 개발은 `android-kvm.googlesource.com/linux`에서 이루어지
 | `for-android/pkvm-mainline-<VER>` | 전체 pKVM 스택을 mainline 릴리스 위에 리베이스한 통합 브랜치 | mainline v`<VER>` |
 | `for-android<NN>/pkvm-*` | 특정 ACK 릴리스를 타깃으로 한 백포트 | 해당 ACK 포크 지점 |
 
+LKML은 **L**inux **K**ernel **M**ailing **L**ist의 약자다. 커널 개발의 주 메일링 리스트이며, 모든 패치가 여기에 게시되어 리뷰를 거친다. 주소는 `linux-kernel@vger.kernel.org`다. pKVM처럼 arm64 KVM 영역은 `kvmarm@lists.linux.dev`와 `linux-arm-kernel@lists.infradead.org`에도 함께 보낸다.
+
 ### 커밋 태그로 본 출처 구분
 
 ACK에 반영된 pKVM 커밋은 다음 접두사로 출처가 구분된다.
