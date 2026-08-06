@@ -62,9 +62,70 @@ ACK에 반영된 pKVM 커밋은 다음 접두사로 출처가 구분된다.
 
 ---
 
-## 4. 머지 전략 권고
+## 4. 대상 커널 버전의 유지보수 기간
 
-### 4.1 타깃 커널 버전별 소스 선택
+- 조사일: 2026-08-07
+- 출처: kernel.org Releases 페이지, Greg Kroah-Hartman의 2026-02-25 LTS 연장 발표
+
+### 4.1 요약표
+
+| 버전 | 구분 | 릴리스일 | 유지보수 종료(EOL) | 총 유지보수 기간 | 잔여 기간 |
+|---|---|---|---|---|---|
+| **6.12** | longterm (LTS) | 2024-11-17 | **2028년 12월** | 약 4년 | 약 2년 4개월 |
+| **6.18** | longterm (LTS) | 2025-11-30 | **2028년 12월** | 약 3년 | 약 2년 4개월 |
+| **7.1** | stable (비 LTS) | 2026-06-14 | **7.2 릴리스 직후 (2026년 8월 예상)** | 약 2~3개월 | 수 주 |
+
+### 4.2 버전별 상세
+
+#### 6.12 (LTS)
+
+- 25번째 LTS 릴리스. 최신 릴리스는 6.12.101 (2026-08-03).
+- 당초 EOL은 2026년 12월이었으나 2026-02-25 발표로 **2년 연장**되어 2028년 12월이 되었다.
+- 연장 근거: PREEMPT_RT 정식 반영, Debian 13(Trixie)과 RHEL 10의 베이스, Raspberry Pi 5 지원.
+- CIP(Civil Infrastructure Platform)의 SLTS 대상이다. `6.12-cip`는 **2035년 중반까지** 유지된다.
+- Android 16의 ACK(`android16-6.12`) 베이스이기도 하다.
+
+#### 6.18 (LTS)
+
+- 26번째 LTS 릴리스. 최신 릴리스는 6.18.43 (2026-08-06).
+- 2026-02-25 발표에서 "최소 3년" 유지로 확정되어 EOL은 2028년 12월이다.
+- Android 17의 ACK(`android17-6.18`) 베이스다.
+- 아직 CIP SLTS 대상으로 지정되지 않았다.
+
+#### 7.1 (stable, 비 LTS)
+
+- 정규 stable 릴리스이며 **LTS가 아니다**. 최신 릴리스는 7.1.7 (2026-08-06).
+- 정규 stable은 다음 메이저 버전이 나오면 곧바로 EOL 처리된다.
+- 직전 사례: 7.0은 2026-04-12 릴리스 후 2026-06-27 EOL. 유지 기간 약 2.5개월.
+- 현재 7.2-rc6(2026-08-02)까지 진행되었다. 7.2 정식 릴리스 후 7.1도 수 주 내 EOL 예상.
+
+### 4.3 2026-02-25 LTS 연장 발표 전문 요약
+
+Greg Kroah-Hartman이 여러 기업 및 stable 메인테이너와의 논의를 거쳐 유지보수 기간을 갱신했다.
+
+| 버전 | 확정 유지 기간 | EOL |
+|---|---|---|
+| 5.10 | 6년 | 2026년 12월 |
+| 5.15 | 5년 | 2026년 12월 |
+| 6.1 | — | 2027년 12월 |
+| 6.6 | 4년 | 2027년 12월 |
+| 6.12 | 4년 | 2028년 12월 |
+| 6.18 | 최소 3년 | 2028년 12월 |
+
+EOL 날짜는 확정된 것이 아니다. 산업계 수요와 메인테이너 여력에 따라 추가 연장될 수 있다.
+
+### 4.4 pKVM 머지 관점의 시사점
+
+1. **7.1은 제품 타깃으로 부적합하다.** 유지보수 기간이 사실상 남아 있지 않다. `for-android/pkvm-mainline-7.1`은 개발/리베이스 기준선으로만 활용하고, 실제 머지 타깃은 mainline(7.2 이후) 또는 LTS로 잡아야 한다.
+2. **장기 제품 타깃은 6.12 또는 6.18이다.** 두 버전의 EOL이 2028년 12월로 동일하다. 따라서 신규 진입이라면 코드베이스가 1년 더 새로운 **6.18을 권장한다**.
+3. **초장기 유지가 필요하면 6.12다.** CIP SLTS로 2035년까지 커버되는 유일한 후보다. 다만 upstream 커뮤니티 지원은 2028년 12월에 끝나고 이후는 CIP 범위다.
+4. **upstream 머지 자체는 mainline을 타깃해야 한다.** LTS 브랜치는 신규 기능을 받지 않는다. mainline 반영 후 필요 시 백포트하는 순서가 맞다.
+
+---
+
+## 5. 머지 전략 권고
+
+### 5.1 타깃 커널 버전별 소스 선택
 
 | 머지 타깃 | 사용할 브랜치 | 근거 |
 |---|---|---|
@@ -75,7 +136,7 @@ ACK에 반영된 pKVM 커밋은 다음 접두사로 출처가 구분된다.
 
 **ACK 브랜치(`kernel/common`)에서 직접 패치를 추출하는 것은 권장하지 않는다.** ACK에는 pKVM 외의 대량의 Android 전용 패치가 뒤섞여 있어 pKVM 패치만 분리하기 어렵고, LTS 백포트가 누적되어 mainline과의 diff가 불필요하게 커진다.
 
-### 4.2 기능 단위 분할 머지
+### 5.2 기능 단위 분할 머지
 
 `pkvm-7.1-*` 태그 약 40개가 토픽별 스냅샷으로 제공되며, 스택 순서대로 태그가 찍혀 있어 단계별 머지 계획에 그대로 활용할 수 있다.
 
@@ -105,13 +166,13 @@ pkvm-7.1-spine-complete / pkvm-7.1-postsnap
 
 ---
 
-## 5. Upstream 반영 현황
+## 6. Upstream 반영 현황
 
-### 5.1 이미 mainline에 있는 부분
+### 6.1 이미 mainline에 있는 부분
 
 pKVM 호스트 측 기반(nVHE protected mode, host stage-2 격리)은 **v5.13 ~ v5.16 시기에 mainline 진입 완료**. `Documentation/virt/kvm/arm/pkvm.rst`가 mainline에 존재한다.
 
-### 5.2 아직 out-of-tree인 부분
+### 6.2 아직 out-of-tree인 부분
 
 Protected guest(pVM) 지원은 **여전히 진행 중**이다.
 
@@ -130,7 +191,7 @@ Protected guest(pVM) 지원은 **여전히 진행 중**이다.
 
 ---
 
-## 6. 후속 작업 제안
+## 7. 후속 작업 제안
 
 1. `android-kvm/linux` clone 후 `for-android/pkvm-mainline-7.1`과 `v7.1` 사이 커밋 수 / 파일별 diff 규모 실측
 2. `ANDROID:` 접두사 커밋만 필터링하여 실제 머지 대상 목록 확정
@@ -148,7 +209,7 @@ git diff --stat v7.1..FETCH_HEAD -- arch/arm64/kvm
 
 ---
 
-## 7. 참고 자료
+## 8. 참고 자료
 
 - [android-kvm/linux refs (전체 브랜치·태그 목록)](https://android-kvm.googlesource.com/linux/+refs)
 - [for-android/pkvm-mainline-7.1](https://android-kvm.googlesource.com/linux/+/refs/heads/for-android/pkvm-mainline-7.1)
@@ -159,3 +220,8 @@ git diff --stat v7.1..FETCH_HEAD -- arch/arm64/kvm
 - [AVF architecture (AOSP)](https://source.android.com/docs/core/virtualization/architecture)
 - [Implement a pKVM vendor module (AOSP)](https://source.android.com/docs/core/virtualization/pkvm-modules)
 - [kernel.org](https://www.kernel.org/)
+- [kernel.org Releases (LTS EOL 표)](https://www.kernel.org/category/releases.html)
+- [Linux 6.18 LTS / 6.12 LTS / 6.6 LTS Support Periods Extended (Phoronix, 2026-02-25)](https://www.phoronix.com/news/Linux-6.18-LTS-6.12-6.6-Extend)
+- [Linux kernel version history (Wikipedia)](https://en.wikipedia.org/wiki/Linux_kernel_version_history)
+- [Linux Kernel 7.0 Reaches End of Life (9to5Linux)](https://9to5linux.com/linux-kernel-7-0-reaches-end-of-life-its-time-to-upgrade-to-linux-kernel-7-1)
+- [CIP is now supporting five SLTS kernels (Civil Infrastructure Platform)](https://cip-project.org/blog/2025/05/26/cip-is-now-supporting-five-slts-kernels)
