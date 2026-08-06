@@ -12,7 +12,7 @@ ACK의 pKVM 패치는 **ACK 브랜치별 LTS 버전**을 베이스로 한다. �
 
 - 현재 최신 통합 브랜치: `for-android/pkvm-mainline-7.1` (베이스 = mainline v7.1.0)
 - ACK(`kernel/common`)는 pKVM 개발의 원본 트리가 아니라 **하류(downstream) 배포처**다.
-- **타깃 커널 버전은 6.18로 결정했다.** 근거는 4.5절 참조.
+- **타깃 커널 버전은 6.18로 결정했다.** 근거는 5장 참조.
 
 ---
 
@@ -135,12 +135,14 @@ EOL 날짜는 확정된 것이 아니다. 산업계 수요와 메인테이너 �
 3. **초장기 유지가 필요하면 6.12다.** CIP SLTS로 2035년까지 커버되는 유일한 후보다. 다만 upstream 커뮤니티 지원은 2028년 12월에 끝나고 이후는 CIP 범위다.
 4. **upstream 머지 자체는 mainline을 타깃해야 한다.** LTS 브랜치는 신규 기능을 받지 않는다. mainline 반영 후 필요 시 백포트하는 순서가 맞다.
 
-### 4.5 결정: 타깃 커널 버전은 6.18
+---
+
+## 5. 결정: 타깃 커널 버전은 6.18
 
 - 결정일: 2026-08-07
 - **결정: 6.18을 타깃 커널 버전으로 채택한다.**
 
-#### 후보 비교
+### 5.1 후보 비교
 
 | 항목 | 6.12 | 6.18 |
 |---|---|---|
@@ -149,7 +151,7 @@ EOL 날짜는 확정된 것이 아니다. 산업계 수요와 메인테이너 �
 | 대응 Android | Android 16 (`android16-6.12`) | Android 17 (`android17-6.18`) |
 | 릴리스일 | 2024-11-17 | 2025-11-30 |
 
-#### 결정 근거
+### 5.2 결정 근거
 
 1. **양쪽 모두 pKVM 패치가 존재한다.** 6.12와 6.18 각각에 대응하는 pKVM 개발 브랜치가 갖춰져 있다. 패치 가용성 측면에서는 두 후보가 동등하다.
 2. **유지보수 기간이 동일하다.** 두 버전 모두 upstream EOL이 2028년 12월이다. 6.12를 선택해도 지원 기간상 이득이 없다.
@@ -157,28 +159,28 @@ EOL 날짜는 확정된 것이 아니다. 산업계 수요와 메인테이너 �
 
 따라서 유지보수 기간이 같은 조건에서 더 새로운 코드베이스이자 최신 Android가 채택한 **6.18**을 선택한다.
 
-#### 결정에 따른 후속 사항
+### 5.3 결정에 따른 후속 사항
 
-- 소스 브랜치는 `for-android/pkvm-mainline-6.18` (베이스 v6.18.0)을 사용한다. 5.1절 참조.
+- 소스 브랜치는 `for-android/pkvm-mainline-6.18` (베이스 v6.18.0)을 사용한다. 6.1절 참조.
 - 6.12는 대상에서 제외한다. CIP SLTS(2035년)가 필요한 요건이 새로 생기면 재검토한다.
 - 7.1은 유지보수 기간이 사실상 없어 제품 타깃에서 제외한다. 개발/리베이스 기준선으로만 참고한다.
 
 ---
 
-## 5. 머지 전략 권고
+## 6. 머지 전략 권고
 
-### 5.1 타깃 커널 버전별 소스 선택
+### 6.1 타깃 커널 버전별 소스 선택
 
 | 머지 타깃 | 사용할 브랜치 | 근거 |
 |---|---|---|
-| **LTS 6.18 (채택)** | **`for-android/pkvm-mainline-6.18`** | **v6.18.0 베이스. 4.5절 결정에 따른 타깃** |
+| **LTS 6.18 (채택)** | **`for-android/pkvm-mainline-6.18`** | **v6.18.0 베이스. 5장 결정에 따른 타깃** |
 | 최신 mainline (7.1 / 7.2) | `for-android/pkvm-mainline-7.1` | 이미 v7.1.0 위에 리베이스 완료. ACK 역포팅 대비 충돌 최소 |
 | LTS 6.12 | `for-android16/pkvm-integration` | v6.12.0-rc2 베이스 |
 | LTS 6.6 | `pkvm-integration-6.6` | v6.6 베이스 |
 
 **ACK 브랜치(`kernel/common`)에서 직접 패치를 추출하는 것은 권장하지 않는다.** ACK에는 pKVM 외의 대량의 Android 전용 패치가 뒤섞여 있어 pKVM 패치만 분리하기 어렵고, LTS 백포트가 누적되어 mainline과의 diff가 불필요하게 커진다.
 
-### 5.2 기능 단위 분할 머지
+### 6.2 기능 단위 분할 머지
 
 `pkvm-7.1-*` 태그 약 40개가 토픽별 스냅샷으로 제공되며, 스택 순서대로 태그가 찍혀 있어 단계별 머지 계획에 그대로 활용할 수 있다.
 
@@ -208,13 +210,13 @@ pkvm-7.1-spine-complete / pkvm-7.1-postsnap
 
 ---
 
-## 6. Upstream 반영 현황
+## 7. Upstream 반영 현황
 
-### 6.1 이미 mainline에 있는 부분
+### 7.1 이미 mainline에 있는 부분
 
 pKVM 호스트 측 기반(nVHE protected mode, host stage-2 격리)은 **v5.13 ~ v5.16 시기에 mainline 진입 완료**. `Documentation/virt/kvm/arm/pkvm.rst`가 mainline에 존재한다.
 
-### 6.2 아직 out-of-tree인 부분
+### 7.2 아직 out-of-tree인 부분
 
 Protected guest(pVM) 지원은 **여전히 진행 중**이다.
 
@@ -233,7 +235,7 @@ Protected guest(pVM) 지원은 **여전히 진행 중**이다.
 
 ---
 
-## 7. 후속 작업 제안
+## 8. 후속 작업 제안
 
 1. `android-kvm/linux` clone 후 `for-android/pkvm-mainline-7.1`과 `v7.1` 사이 커밋 수 / 파일별 diff 규모 실측
 2. `ANDROID:` 접두사 커밋만 필터링하여 실제 머지 대상 목록 확정
@@ -251,7 +253,7 @@ git diff --stat v7.1..FETCH_HEAD -- arch/arm64/kvm
 
 ---
 
-## 8. 참고 자료
+## 9. 참고 자료
 
 - [android-kvm/linux refs (전체 브랜치·태그 목록)](https://android-kvm.googlesource.com/linux/+refs)
 - [for-android/pkvm-mainline-7.1](https://android-kvm.googlesource.com/linux/+/refs/heads/for-android/pkvm-mainline-7.1)
