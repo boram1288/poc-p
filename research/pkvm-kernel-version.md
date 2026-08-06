@@ -24,9 +24,62 @@ pKVM의 원본 개발은 `android-kvm.googlesource.com/linux`에서 이루어지
 |---|---|---|
 | `for-upstream/pkvm-*` | LKML 투고용 토픽 시리즈 (core, modules, smmu-v3, tracing, pviommu, dev-assign, sme, kcov 등 약 25개) | 투고 당시 mainline |
 | `for-android/pkvm-mainline-<VER>` | 전체 pKVM 스택을 mainline 릴리스 위에 리베이스한 통합 브랜치 | mainline v`<VER>` |
-| `for-android<NN>/pkvm-*` | 특정 ACK 릴리스를 타깃으로 한 백포트 | 해당 ACK 포크 지점 |
+| `for-android/pkvm-master-<VER>` | ACK 적용용 순수 `ANDROID:` 패치 스택 | 해당 커널 버전 |
+| `for-android<NN>/pkvm-*` | 특정 ACK 릴리스를 타깃으로 한 백포트 (**구 방식, 폐기**) | 해당 ACK 포크 지점 |
+
+`for-android<NN>/` 네임스페이스는 더 이상 쓰이지 않는다. 2-1절 참조.
 
 LKML은 **L**inux **K**ernel **M**ailing **L**ist의 약자다. 커널 개발의 주 메일링 리스트이며, 모든 패치가 여기에 게시되어 리뷰를 거친다. 주소는 `linux-kernel@vger.kernel.org`다. pKVM처럼 arm64 KVM 영역은 `kvmarm@lists.linux.dev`와 `linux-arm-kernel@lists.infradead.org`에도 함께 보낸다.
+
+### 2-1. `for-android17/pkvm-*` 브랜치가 없는 이유
+
+- 조사일: 2026-08-07
+- 조사 방법: `git ls-remote --heads https://android-kvm.googlesource.com/linux` 및 `.../kernel/common` 전수 확인, gitiles 로그로 각 브랜치 최종 커밋 일자 확인
+
+#### 확인 사실
+
+`for-android17/` 네임스페이스는 **존재하지 않는다**. 오타나 접근 권한 문제가 아니다.
+
+| 네임스페이스 | 브랜치 수 | 비고 |
+|---|---|---|
+| `for-android14-6.1/` | 1개 (`pkvm`) | Android 14 |
+| `for-android15/` | **0개** | 애초에 만들어진 적 없음 |
+| `for-android16/` | 27개 | Android 16. 최종 커밋 2024-10-15 이후 동결 |
+| `for-android17/` | **0개** | 만들어진 적 없음 |
+
+Android 17 이름이 붙은 브랜치는 `android17-6.18-dma` 하나뿐이다. Mostafa Saleh의 DMA/SWIOTLB 개인 작업 브랜치이며 pKVM 통합 브랜치가 아니다.
+
+한편 ACK(`kernel/common`) 쪽에는 `android17-6.18`, `android17-6.18-lts`, `android17-6.18-2026-04`, `android17-6.18-2026-06`, `android17-6.18-kminext`가 정상적으로 존재한다. 즉 **Android 17의 브랜치 컷 자체는 완료되었고, pKVM 개발 저장소의 명명 규칙만 달라진 것**이다.
+
+#### 원인: 명명 규칙이 Android 릴리스 기준에서 커널 버전 기준으로 바뀌었다
+
+| 시기 | 대상 커널 | 방식 | 대표 예 |
+|---|---|---|---|
+| ~2023 | 6.3 ~ 6.6 | `for-android/<토픽>` 무버전 롤링 브랜치 + `pkvm-integration-<VER>` 태그 | `for-android/pkvm-core` (최종 커밋 2023년) |
+| 2024 | 6.12 | `for-android<NN>/<토픽>` Android 릴리스별 동결 네임스페이스 | `for-android16/pkvm-integration` (최종 2024-10-15) |
+| 2024~ | 6.12 ~ 7.1 | `for-android/pkvm-mainline-<VER>` mainline 리베이스 통합 브랜치 | `for-android/pkvm-mainline-7.1` (최종 2026-07-31) |
+| 2025~ | 6.17 ~ | `for-android/pkvm-master-<VER>` ACK 적용용 순수 `ANDROID:` 스택 | `for-android/pkvm-master-6.18` (최종 2025-11-05) |
+| 2026 | 7.1 | 토픽 분할을 브랜치에서 **태그**로 이전 | `pkvm-7.1-base` 등 약 40개 태그 |
+
+핵심 변화는 두 가지다.
+
+1. **버전 키가 Android 릴리스 번호에서 커널 버전 번호로 바뀌었다.** `for-android16` → `for-android/pkvm-*-6.18` 형태다. 따라서 Android 17에 해당하는 브랜치는 `for-android17/*`가 아니라 **`-6.18` 접미사가 붙은 브랜치들**이다.
+2. **토픽 분할 수단이 브랜치에서 태그로 바뀌었다.** `for-android16/`의 27개 토픽 브랜치가 하던 역할을 이제 `pkvm-<VER>-<토픽>` 태그가 대신한다. 그래서 새 네임스페이스를 팔 이유가 없어졌다.
+
+구 방식의 흔적은 `attic/for-android/*-6.12-rc1`, `attic/for-android/*-6.12-rc2`로 남아 있다. 6.12 시점에 무버전 롤링 토픽 브랜치들이 일괄 보관 처리되었다.
+
+#### `for-android16/pkvm-integration`에 대응하는 6.18 브랜치
+
+| 구 브랜치 (6.12 / Android 16) | 대응 6.18 브랜치 | 성격 |
+|---|---|---|
+| `for-android16/pkvm-integration` | **`for-android/pkvm-master-6.18`** | ACK 적용용 순수 `ANDROID:` 패치 스택. 최근 60커밋 전수가 `ANDROID:` 접두사이며 merge 커밋이 없다 |
+| `for-android/pkvm-mainline-6.12` | **`for-android/pkvm-mainline-6.18`** | mainline v6.18 위 리베이스 통합 브랜치 |
+
+`-6.18` 계열에는 파생 브랜치도 있다. `for-android/pkvm-master-6.18-protected`(protected guest), `for-android/pkvm-master-6.18-smmu`(SMMUv3)다.
+
+#### 결론
+
+`for-android17/pkvm-*`를 찾을 필요가 없다. Android 17 = 커널 6.18이므로 **`for-android/pkvm-mainline-6.18`(upstream 머지용)과 `for-android/pkvm-master-6.18`(ACK 적용용)을 보면 된다.** 6장 머지 전략의 소스 브랜치 선택은 그대로 유효하다.
 
 ### 커밋 태그로 본 출처 구분
 
@@ -179,6 +232,8 @@ EOL 날짜는 확정된 것이 아니다. 산업계 수요와 메인테이너 �
 | 최신 mainline (7.1 / 7.2) | `for-android/pkvm-mainline-7.1` | 이미 v7.1.0 위에 리베이스 완료. ACK 역포팅 대비 충돌 최소 |
 | LTS 6.12 | `for-android16/pkvm-integration` | v6.12.0-rc2 베이스 |
 | LTS 6.6 | `pkvm-integration-6.6` | v6.6 베이스 |
+
+`ANDROID:` 패치만 추려낸 목록이 필요하면 같은 커널 버전의 `for-android/pkvm-master-<VER>`를 참고한다. 6.18의 경우 `for-android/pkvm-master-6.18`이며, 전 커밋이 `ANDROID:` 접두사라 실제 머지 대상 선별에 유용하다.
 
 **ACK 브랜치(`kernel/common`)에서 직접 패치를 추출하는 것은 권장하지 않는다.** ACK에는 pKVM 외의 대량의 Android 전용 패치가 뒤섞여 있어 pKVM 패치만 분리하기 어렵고, LTS 백포트가 누적되어 mainline과의 diff가 불필요하게 커진다.
 
