@@ -352,10 +352,12 @@ EOL 날짜는 확정된 것이 아니다. 산업계 수요와 메인테이너 �
 
 #### 권장 절차
 
-1. `pkvm-mainline-6.18`에서 pKVM 계열 커밋 566개 목록을 뽑아 머지 대상을 확정한다.
+1. `pkvm-mainline-6.18`에서 머지 대상 목록을 확정한다. 좁은 필터 566개, 확장 필터 710개다.
 2. 그중 `pkvm-master-6.18`에 있는 348개는 선형 시리즈로 일괄 추출한다.
-3. 남은 218개는 `pkvm-mainline-6.18`에서 개별 cherry-pick 한다.
+3. 나머지는 `pkvm-mainline-6.18`에서 개별 cherry-pick 한다.
 4. 베이스 차이에 주의한다. master는 **v6.18-rc2** 기준이므로 v6.18 정식 위에 올릴 때 재정렬이 필요할 수 있다.
+
+단계별 명령과 리스크는 **8장 실행 계획**에 정리했다.
 
 #### 그 외 커널 버전 (참고)
 
@@ -366,34 +368,6 @@ EOL 날짜는 확정된 것이 아니다. 산업계 수요와 메인테이너 �
 | LTS 6.6 | `pkvm-integration-6.6` | v6.6 베이스 |
 
 **ACK 브랜치(`kernel/common`)에서 직접 패치를 추출하는 것은 권장하지 않는다.** ACK에는 pKVM 외의 대량의 Android 전용 패치가 뒤섞여 있어 pKVM 패치만 분리하기 어렵고, LTS 백포트가 누적되어 mainline과의 diff가 불필요하게 커진다.
-
-### 6.2 기능 단위 분할 머지
-
-`pkvm-7.1-*` 태그 약 40개가 토픽별 스냅샷으로 제공되며, 스택 순서대로 태그가 찍혀 있어 단계별 머지 계획에 그대로 활용할 수 있다.
-
-주요 태그 (스택 하단 → 상단 경향):
-
-```
-pkvm-7.1-base
-pkvm-7.1-pvm-core
-pkvm-7.1-hypmem          / pkvm-7.1-hypexport
-pkvm-7.1-modules-core    / pkvm-7.1-modules-perms
-pkvm-7.1-modearly        / pkvm-7.1-modlock / pkvm-7.1-modprot
-pkvm-7.1-psci-memprotect
-pkvm-7.1-mem-relinquish
-pkvm-7.1-mmioguard       / pkvm-7.1-mmio-autoenroll
-pkvm-7.1-ffa-foundation  / pkvm-7.1-ffa-blockb / pkvm-7.1-ffa-backhalf
-pkvm-7.1-sve / pkvm-7.1-sve-donate / pkvm-7.1-sme
-pkvm-7.1-pvmfw
-pkvm-7.1-cma / pkvm-7.1-pinpage / pkvm-7.1-buddyrace / pkvm-7.1-coalesce
-pkvm-7.1-tlbi / pkvm-7.1-fgt / pkvm-7.1-rwlock / pkvm-7.1-getleaf
-pkvm-7.1-smchandlers / pkvm-7.1-smctrng
-pkvm-7.1-modtracing-v1 / pkvm-7.1-mondebug
-pkvm-7.1-hyp-req
-pkvm-7.1-audit-fixes / pkvm-7.1-sidefixes
-pkvm-7.1-thp-infra / pkvm-7.1-gki
-pkvm-7.1-spine-complete / pkvm-7.1-postsnap
-```
 
 ---
 
@@ -422,21 +396,142 @@ Protected guest(pVM) 지원은 **여전히 진행 중**이다.
 
 ---
 
-## 8. 후속 작업 제안
+## 8. 6.18 머지 실행 계획
 
-1. `android-kvm/linux` clone 후 `for-android/pkvm-mainline-7.1`과 `v7.1` 사이 커밋 수 / 파일별 diff 규모 실측
-2. `ANDROID:` 접두사 커밋만 필터링하여 실제 머지 대상 목록 확정
-3. 타깃 커널 버전 확정 후 토픽 태그 단위 머지 순서 수립
+upstream **v6.18** 위에 pKVM 패치를 올리는 실제 작업 절차다. 5장 결정과 6장 소스 선택을 전제로 한다.
+
+### 8.1 대상 규모
+
+`for-android/pkvm-mainline-6.18`에서 v6.18 이후 커밋을 필터별로 집계한 결과다.
+
+| 필터 | 커밋 수 | 설명 |
+|---|---|---|
+| `ANDROID:` 계열 전체 | 1587 | 상한. pKVM 무관 항목 포함 |
+| 확장 필터 (pKVM 키워드) | **710** | 현실적 상한 |
+| 좁은 필터 (`ANDROID: KVM/ARM64`) | **566** | 현실적 하한 |
+| 명백한 비대상 (`GKI`/`INCFS`/`OWNERS`) | 153 | 제외 대상 |
+
+**대상은 566 ~ 710 커밋 범위다.** 좁은 필터만 쓰면 안 된다. 접두사가 `ANDROID: KVM:`이 아닌 pKVM 구성 요소가 144개 누락되기 때문이다. 누락 영역은 다음과 같다.
+
+| 영역 | 커밋 수 |
+|---|---|
+| `iommu/arm-smmu-v3-kvm-pv` | 33 |
+| `dma-buf` | 13 |
+| `iommu/arm-smmu-v3-kvm` | 12 |
+| `iommu/arm-smmu-v3`, `io-pgtable-arm` | 11 |
+| `drivers`, `misc`, `drivers/vfio` | 18 |
+| `virtio_balloon`, `swiotlb` | 7 |
+
+### 8.2 단계별 절차
+
+#### 0단계. 작업 트리 준비
 
 ```bash
-# 실측 명령 예시
 git clone https://android-kvm.googlesource.com/linux pkvm-linux
 cd pkvm-linux
-git fetch origin for-android/pkvm-mainline-7.1
-git log --oneline v7.1..FETCH_HEAD | wc -l
-git log --oneline v7.1..FETCH_HEAD --grep='^ANDROID:' | wc -l
-git diff --stat v7.1..FETCH_HEAD -- arch/arm64/kvm
+git remote add korg https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git
+git fetch korg v6.18 --no-tags
+git fetch origin for-android/pkvm-mainline-6.18 for-android/pkvm-master-6.18
+git switch -c pkvm-6.18-merge v6.18
 ```
+
+#### 1단계. 대상 집합 확정
+
+```bash
+BASE=$(git rev-parse v6.18)
+ML=origin/for-android/pkvm-mainline-6.18
+
+# 1차: 확장 필터로 후보 수집
+git log --reverse --format='%H %s' $BASE..$ML \
+  | grep -E ' (ANDROID|SQUASH: ANDROID|BACKPORT: ANDROID):' \
+  | grep -iE 'kvm|hyp|pkvm|smmu|iommu|pvmfw|swiotlb|balloon|ffa|vfio|arm64|dma-buf' \
+  | grep -vE ' ANDROID: (GKI|INCFS|OWNERS)' > candidates.txt
+
+# 2차: 경로 기반 교차 검증 (접두사 필터 누락분 보완)
+git log --format='%H' $BASE..$ML -- \
+  arch/arm64/kvm drivers/iommu drivers/virt drivers/vfio \
+  include/uapi/linux/kvm.h Documentation/virt/kvm > by-path.txt
+```
+
+접두사 필터와 경로 필터의 **합집합**을 대상으로 잡는다. 어느 한쪽만으로는 누락이 생긴다.
+
+#### 2단계. 실제 신규 머지 대상 선별
+
+접두사로 이미 상류에 있는 것을 걸러낸다.
+
+- `UPSTREAM:` / `BACKPORT:` — v6.18에 이미 존재. **제외**
+- `FROMGIT:` / `FROMLIST:` — maintainer tree 또는 LKML 게시 완료. **중복 투고 주의**, 별도 관리
+- `ANDROID:` — 순수 out-of-tree. **실제 머지 대상**
+
+```bash
+# v6.18 에 이미 있는지 제목으로 대조
+while read h s; do
+  git log --oneline v6.18 --grep="$(echo "$s" | sed 's/^[A-Z]*: //')" -1
+done < candidates.txt
+```
+
+#### 3단계. 토픽 분류
+
+6.18용 토픽 태그는 **존재하지 않는다**(`pkvm-6.18-*` 0개). 직접 분류해야 한다. 분류 체계는 `pkvm-7.1-*` 태그 40개의 구분을 참고한다.
+
+권장 토픽 구분이다.
+
+```
+base -> pvm-core -> hypmem/hypexport
+     -> modules (core, perms, early, lock, prot)
+     -> psci-memprotect -> mem-relinquish -> mmioguard
+     -> ffa -> sve/sme -> pvmfw
+     -> 메모리 최적화 (cma, pinpage, coalesce, thp)
+     -> 락/TLB (tlbi, fgt, rwlock)
+     -> smc handlers -> tracing -> hyp-req
+     -> iommu/smmu-v3, pviommu
+```
+
+#### 4단계. 스택 순서 결정
+
+`for-android/pkvm-master-6.18`의 348커밋이 **이미 의존 순서대로 선형 정렬**되어 있다. 이 순서를 뼈대로 삼고 나머지를 끼워 넣는다.
+
+#### 5단계. 추출과 적용
+
+```bash
+# (a) master 의 348개: 선형 시리즈 일괄 추출
+git format-patch --no-numbered -o series/ \
+  $(git merge-base v6.18-rc2 origin/for-android/pkvm-master-6.18)..origin/for-android/pkvm-master-6.18
+
+# (b) master 에 없는 218개 이상: mainline 에서 개별 cherry-pick
+git cherry-pick -x <sha>
+```
+
+`master`는 **v6.18-rc2** 기준이다. v6.18 정식 위에 올리면 rc2~정식 사이 변경과 충돌할 수 있으므로 재정렬을 전제로 한다.
+
+#### 6단계. 빌드와 동작 검증
+
+```bash
+make ARCH=arm64 defconfig
+./scripts/config -e KVM -e NVHE_EL2_DEBUG -e PROTECTED_NVHE_STACKTRACE
+make ARCH=arm64 -j"$(nproc)"
+```
+
+ACK `android17-6.18`과 대조해 누락을 잡는다. `pkvm-master-6.18`의 394커밋 중 378개가 ACK에 있으므로, ACK를 정답지로 쓸 수 있다.
+
+#### 7단계. 투고 준비
+
+토픽별 시리즈로 쪼개 투고한다. CC 대상은 2-2절에 정리한 세 리스트다. `linux-kernel@vger.kernel.org`, `kvmarm@lists.linux.dev`, `linux-arm-kernel@lists.infradead.org`다.
+
+### 8.3 리스크
+
+| 리스크 | 내용 | 대응 |
+|---|---|---|
+| 대상 집합 누락 | 접두사 필터만으로는 pviommu·smmu-v3-kvm·dma-buf 등 144개 누락 | 1단계에서 경로 필터 병행 |
+| 베이스 불일치 | `master-6.18`은 v6.18-rc2 기준 | 5단계에서 재정렬 전제 |
+| 중복 투고 | `FROMLIST:` 커밋은 이미 LKML 게시분 | 2단계에서 분리 관리 |
+| 상류 진행과 충돌 | protected guest는 upstream 진행 중 (7.2절) | 해당 영역은 upstream 시리즈 추종, 독자 투고 지양 |
+| 소스 갱신 정지 | `pkvm-master-6.18`은 2025-11-05 이후 갱신 없음 | `pkvm-mainline-6.18`을 기준 트리로 유지 |
+
+### 8.4 미결 사항
+
+- 경로 기반 집계를 완주하지 못했다. blobless clone에서 트리 지연 fetch가 느려 시간 초과했다. 정식 clone 후 재측정이 필요하다.
+- 566 ~ 710 범위의 정확한 확정은 1단계 산출물로 대체한다.
 
 ---
 
