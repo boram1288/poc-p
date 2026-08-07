@@ -36,53 +36,23 @@ LKML은 **L**inux **K**ernel **M**ailing **L**ist의 약자다. 커널 개발의
 
 ### 2-1. `for-android17/pkvm-*` 브랜치가 없는 이유
 
-- 조사일: 2026-08-07
-- 조사 방법: `git ls-remote --heads https://android-kvm.googlesource.com/linux` 및 `.../kernel/common` 전수 확인, gitiles 로그로 각 브랜치 최종 커밋 일자 확인
+조사일 2026-08-07. `git ls-remote --heads`로 두 저장소를 전수 확인했다.
 
-#### 확인 사실
+`for-android17/` 네임스페이스는 **존재하지 않는다**. 오타나 권한 문제가 아니다. `for-android15/`도 마찬가지로 없다. 이 네임스페이스가 있는 것은 `for-android14-6.1/`(1개)과 `for-android16/`(27개, 2024-10-15 이후 동결)뿐이다.
 
-`for-android17/` 네임스페이스는 **존재하지 않는다**. 오타나 접근 권한 문제가 아니다.
+ACK(`kernel/common`)에는 `android17-6.18`과 그 파생 브랜치가 정상 존재한다. **Android 17의 브랜치 컷은 완료되었고, pKVM 개발 저장소의 명명 규칙만 바뀐 것**이다.
 
-| 네임스페이스 | 브랜치 수 | 비고 |
-|---|---|---|
-| `for-android14-6.1/` | 1개 (`pkvm`) | Android 14 |
-| `for-android15/` | **0개** | 애초에 만들어진 적 없음 |
-| `for-android16/` | 27개 | Android 16. 최종 커밋 2024-10-15 이후 동결 |
-| `for-android17/` | **0개** | 만들어진 적 없음 |
+원인은 두 가지다.
 
-Android 17 이름이 붙은 브랜치는 `android17-6.18-dma` 하나뿐이다. Mostafa Saleh의 DMA/SWIOTLB 개인 작업 브랜치이며 pKVM 통합 브랜치가 아니다.
+1. **버전 키가 Android 릴리스 번호에서 커널 버전 번호로 바뀌었다.** `for-android16/<토픽>` 방식이 `for-android/pkvm-<종류>-<커널버전>` 방식으로 대체되었다. Android 17에 해당하는 브랜치는 `-6.18` 접미사가 붙은 것들이다.
+2. **토픽 분할이 브랜치에서 태그로 옮겨갔다.** `for-android16/`의 27개 토픽 브랜치가 하던 역할을 `pkvm-<VER>-<토픽>` 태그(7.1 기준 약 40개)가 대신한다. 새 네임스페이스를 팔 이유가 사라졌다.
 
-한편 ACK(`kernel/common`) 쪽에는 `android17-6.18`, `android17-6.18-lts`, `android17-6.18-2026-04`, `android17-6.18-2026-06`, `android17-6.18-kminext`가 정상적으로 존재한다. 즉 **Android 17의 브랜치 컷 자체는 완료되었고, pKVM 개발 저장소의 명명 규칙만 달라진 것**이다.
+따라서 Android 17 = 커널 6.18에 해당하는 브랜치는 다음 둘이다. 차이는 2-2절에서 다룬다.
 
-#### 원인: 명명 규칙이 Android 릴리스 기준에서 커널 버전 기준으로 바뀌었다
+- `for-android/pkvm-master-6.18` — `for-android16/pkvm-integration`의 후계
+- `for-android/pkvm-mainline-6.18` — `for-android/pkvm-mainline-6.12`의 후계
 
-| 시기 | 대상 커널 | 방식 | 대표 예 |
-|---|---|---|---|
-| ~2023 | 6.3 ~ 6.6 | `for-android/<토픽>` 무버전 롤링 브랜치 + `pkvm-integration-<VER>` 태그 | `for-android/pkvm-core` (최종 커밋 2023년) |
-| 2024 | 6.12 | `for-android<NN>/<토픽>` Android 릴리스별 동결 네임스페이스 | `for-android16/pkvm-integration` (최종 2024-10-15) |
-| 2024~ | 6.12 ~ 7.1 | `for-android/pkvm-mainline-<VER>` mainline 리베이스 통합 브랜치 | `for-android/pkvm-mainline-7.1` (최종 2026-07-31) |
-| 2025~ | 6.17 ~ | `for-android/pkvm-master-<VER>` ACK 적용용 순수 `ANDROID:` 스택 | `for-android/pkvm-master-6.18` (최종 2025-11-05) |
-| 2026 | 7.1 | 토픽 분할을 브랜치에서 **태그**로 이전 | `pkvm-7.1-base` 등 약 40개 태그 |
-
-핵심 변화는 두 가지다.
-
-1. **버전 키가 Android 릴리스 번호에서 커널 버전 번호로 바뀌었다.** `for-android16` → `for-android/pkvm-*-6.18` 형태다. 따라서 Android 17에 해당하는 브랜치는 `for-android17/*`가 아니라 **`-6.18` 접미사가 붙은 브랜치들**이다.
-2. **토픽 분할 수단이 브랜치에서 태그로 바뀌었다.** `for-android16/`의 27개 토픽 브랜치가 하던 역할을 이제 `pkvm-<VER>-<토픽>` 태그가 대신한다. 그래서 새 네임스페이스를 팔 이유가 없어졌다.
-
-구 방식의 흔적은 `attic/for-android/*-6.12-rc1`, `attic/for-android/*-6.12-rc2`로 남아 있다. 6.12 시점에 무버전 롤링 토픽 브랜치들이 일괄 보관 처리되었다.
-
-#### `for-android16/pkvm-integration`에 대응하는 6.18 브랜치
-
-| 구 브랜치 (6.12 / Android 16) | 대응 6.18 브랜치 | 성격 |
-|---|---|---|
-| `for-android16/pkvm-integration` | **`for-android/pkvm-master-6.18`** | ACK 적용용 순수 `ANDROID:` 패치 스택. 최근 60커밋 전수가 `ANDROID:` 접두사이며 merge 커밋이 없다 |
-| `for-android/pkvm-mainline-6.12` | **`for-android/pkvm-mainline-6.18`** | mainline v6.18 위 리베이스 통합 브랜치 |
-
-`-6.18` 계열에는 파생 브랜치도 있다. `for-android/pkvm-master-6.18-protected`(protected guest), `for-android/pkvm-master-6.18-smmu`(SMMUv3)다.
-
-#### 결론
-
-`for-android17/pkvm-*`를 찾을 필요가 없다. Android 17 = 커널 6.18이므로 **`for-android/pkvm-mainline-6.18`(upstream 머지용)과 `for-android/pkvm-master-6.18`(ACK 적용용)을 보면 된다.** 6장 머지 전략의 소스 브랜치 선택은 그대로 유효하다.
+`for-android/pkvm-master-6.18-protected`(protected guest), `-smmu`(SMMUv3) 파생 브랜치도 있다.
 
 ### 2-2. `pkvm-master-6.18`과 `pkvm-mainline-6.18`의 차이
 
