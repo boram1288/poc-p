@@ -12,12 +12,57 @@ ACK의 pKVM 패치는 **ACK 브랜치별 LTS 버전**을 베이스로 한다. �
 
 - 현재 최신 통합 브랜치: `for-android/pkvm-mainline-7.1` (Makefile v7.1.0)
 - ACK(`kernel/common`)는 pKVM 개발의 원본 트리가 아니라 **하류(downstream) 배포처**다.
-- **주의**: `pkvm-mainline-<VER>`는 순수 mainline 위 리베이스가 아니라 ACK `android-mainline` 스냅샷이다. 순수 pKVM 패치만 필요하면 `pkvm-master-<VER>`를 써야 한다. 2-2절 참조.
+- **주의**: `pkvm-mainline-<VER>`는 순수 mainline 위 리베이스가 아니라 ACK `android-mainline` 스냅샷이다. 순수 pKVM 패치만 필요하면 `pkvm-master-<VER>`를 써야 한다. 2-4절 참조.
 - **타깃 커널 버전은 6.18로 결정했다.** 근거는 5장 참조.
 
 ---
 
 ## 2. pKVM 개발 트리 구조
+
+### 2-1. 저장소와 브랜치의 관계
+
+```mermaid
+flowchart LR
+    subgraph KORG["kernel.org - upstream"]
+        LINUS["Linus master<br/>mainline"]
+        RC2["v6.18-rc2"]
+        REL["v6.18 릴리스"]
+    end
+
+    subgraph AKVM["android-kvm.googlesource.com/linux<br/>pKVM 원본 개발 트리"]
+        MASTER["for-android/pkvm-master-6.18<br/>베이스: upstream v6.18-rc2<br/>pKVM 394커밋 · merge 0"]
+        MAINLINE["for-android/pkvm-mainline-6.18<br/>베이스: ACK android-mainline<br/>pKVM + Android 전체"]
+        ML71["for-android/pkvm-mainline-7.1<br/>최신 개발 tip"]
+        UPST["for-upstream/pkvm-*<br/>LKML 투고용 토픽 시리즈"]
+    end
+
+    subgraph ACKR["android.googlesource.com/kernel/common - ACK"]
+        AMAIN["android-mainline<br/>롤링 통합 브랜치"]
+        A17["android17-6.18<br/>Android 17 릴리스 브랜치"]
+    end
+
+    LINUS --> RC2
+    LINUS --> REL
+    LINUS -->|"v6.x-rc 상시 병합"| AMAIN
+    RC2 -->|"베이스"| MASTER
+    AMAIN -->|"베이스"| MAINLINE
+    AMAIN -->|"베이스"| ML71
+    AMAIN -->|"6.18 시점 fork"| A17
+    MASTER -->|"378/394 커밋 반영"| A17
+    MASTER -.->|"391/394 포함"| MAINLINE
+    MASTER -.->|"토픽 분할 투고"| UPST
+    UPST -.->|"LKML 리뷰 후 머지"| LINUS
+```
+
+읽는 법이다.
+
+- **왼쪽이 상류, 오른쪽이 하류다.** upstream에서 출발해 pKVM 개발 트리를 거쳐 ACK 릴리스 브랜치로 흘러간다.
+- **`master`와 `mainline`은 베이스 트리 이름이다.** `pkvm-master-*`는 Linus의 `master`를, `pkvm-mainline-*`는 ACK의 `android-mainline`을 베이스로 한다. 헷갈리기 쉬운 지점이다.
+- **실선은 실측으로 확인한 관계다.** 커밋 수치는 2-4절 조사 결과다.
+- **점선은 포함 관계 또는 투고 경로다.** `for-upstream/pkvm-*`에서 LKML을 거쳐 mainline에 반영되는 흐름은 AOSP·LKML 공개 절차 기준이며 커밋 단위로 대조하지는 않았다.
+- 폐기된 `for-android16/*` 네임스페이스는 생략했다. 2-3절 참조.
+
+### 2-2. 브랜치 계열
 
 pKVM의 원본 개발은 `android-kvm.googlesource.com/linux`에서 이루어지며, 세 갈래로 관리된다.
 
@@ -28,13 +73,13 @@ pKVM의 원본 개발은 `android-kvm.googlesource.com/linux`에서 이루어지
 | `for-android/pkvm-mainline-<VER>` | ACK `android-mainline` 스냅샷 **위에** 얹은 pKVM 스택 | ACK `android-mainline` (Makefile v`<VER>`) |
 | `for-android<NN>/pkvm-*` | 특정 ACK 릴리스를 타깃으로 한 백포트 (**구 방식, 폐기**) | 해당 ACK 포크 지점 |
 
-브랜치 이름의 `master`와 `mainline`은 **베이스 트리를 가리키는 말**이다. `master`는 Linus의 `master`(upstream), `mainline`은 ACK의 `android-mainline`이다. 이름이 헷갈리기 쉬우니 주의한다. 상세 비교는 2-2절 참조.
+브랜치 이름의 `master`와 `mainline`은 **베이스 트리를 가리키는 말**이다. `master`는 Linus의 `master`(upstream), `mainline`은 ACK의 `android-mainline`이다. 이름이 헷갈리기 쉬우니 주의한다. 상세 비교는 2-4절 참조.
 
-`for-android<NN>/` 네임스페이스는 더 이상 쓰이지 않는다. 2-1절 참조.
+`for-android<NN>/` 네임스페이스는 더 이상 쓰이지 않는다. 2-3절 참조.
 
 LKML은 **L**inux **K**ernel **M**ailing **L**ist의 약자다. 커널 개발의 주 메일링 리스트이며, 모든 패치가 여기에 게시되어 리뷰를 거친다. 주소는 `linux-kernel@vger.kernel.org`다. pKVM처럼 arm64 KVM 영역은 `kvmarm@lists.linux.dev`와 `linux-arm-kernel@lists.infradead.org`에도 함께 보낸다.
 
-### 2-1. `for-android17/pkvm-*` 브랜치가 없는 이유
+### 2-3. `for-android17/pkvm-*` 브랜치가 없는 이유
 
 조사일 2026-08-07. `git ls-remote --heads`로 두 저장소를 전수 확인했다.
 
@@ -47,14 +92,14 @@ ACK(`kernel/common`)에는 `android17-6.18`과 그 파생 브랜치가 정상 �
 1. **버전 키가 Android 릴리스 번호에서 커널 버전 번호로 바뀌었다.** `for-android16/<토픽>` 방식이 `for-android/pkvm-<종류>-<커널버전>` 방식으로 대체되었다. Android 17에 해당하는 브랜치는 `-6.18` 접미사가 붙은 것들이다.
 2. **토픽 분할이 브랜치에서 태그로 옮겨갔다.** `for-android16/`의 27개 토픽 브랜치가 하던 역할을 `pkvm-<VER>-<토픽>` 태그(7.1 기준 약 40개)가 대신한다. 새 네임스페이스를 팔 이유가 사라졌다.
 
-따라서 Android 17 = 커널 6.18에 해당하는 브랜치는 다음 둘이다. 차이는 2-2절에서 다룬다.
+따라서 Android 17 = 커널 6.18에 해당하는 브랜치는 다음 둘이다. 차이는 2-4절에서 다룬다.
 
 - `for-android/pkvm-master-6.18` — `for-android16/pkvm-integration`의 후계
 - `for-android/pkvm-mainline-6.18` — `for-android/pkvm-mainline-6.12`의 후계
 
 `for-android/pkvm-master-6.18-protected`(protected guest), `-smmu`(SMMUv3) 파생 브랜치도 있다.
 
-### 2-2. `pkvm-master-6.18`과 `pkvm-mainline-6.18`의 차이
+### 2-4. `pkvm-master-6.18`과 `pkvm-mainline-6.18`의 차이
 
 - 조사일: 2026-08-07
 - 조사 방법: `git fetch --filter=tree:0 --depth=3000`으로 세 브랜치를 실제로 받아 커밋 그래프 직접 분석
@@ -101,6 +146,8 @@ merge 커밋이 0이라는 점도 중요하다. v6.18-rc2 위에 선형으로 �
 
 `pkvm-master-6.18`의 394개 커밋 중 **391개(99%)가 `pkvm-mainline-6.18`에도 존재한다** (접두사 정규화 후 비교). 즉 master는 mainline에서 pKVM 부분만 떼어낸 부분집합에 가깝다.
 
+ACK 반영도 확인했다. `kernel/common`의 `android17-6.18`을 받아 대조한 결과 **394개 중 378개(96%)가 ACK에 그대로 들어가 있다.** `pkvm-master-6.18`이 Android 17로 흘러가는 실제 경로임이 확인된다.
+
 참고로 `pkvm-mainline-7.1`과의 정규화 일치는 238개(60%)다. 나머지는 upstream 반영 과정에서 제목이 바뀌었거나 재작성된 것으로 보인다.
 
 #### 용도 구분
@@ -113,7 +160,7 @@ merge 커밋이 0이라는 점도 중요하다. v6.18-rc2 위에 선형으로 �
 
 단 `pkvm-master-<VER>` 계열은 6.17과 6.18 두 버전에만 존재하고 7.1용은 없다. 6.18의 `pkvm-master-6.18`도 2025-11-05 이후 갱신이 멈춰 있다.
 
-### 커밋 태그로 본 출처 구분
+### 2-5. 커밋 태그로 본 출처 구분
 
 ACK에 반영된 pKVM 커밋은 다음 접두사로 출처가 구분된다.
 
@@ -138,7 +185,7 @@ ACK에 반영된 pKVM 커밋은 다음 접두사로 출처가 구분된다.
 | 17 | `android17-6.18` | **6.18.32** | `for-android/pkvm-mainline-6.18` | **v6.18.0** (ACK `android-mainline`) |
 | (개발 최신) | — | — | **`for-android/pkvm-mainline-7.1`** | **v7.1.0** (ACK `android-mainline`, tip: 2026-07-31) |
 
-`확인된 베이스`는 `Makefile` 값이다. 같은 `6.18`이라도 `pkvm-master-6.18`은 upstream 트리, `pkvm-mainline-6.18`은 ACK `android-mainline` 트리 위에 있다. 2-2절 참조.
+`확인된 베이스`는 `Makefile` 값이다. 같은 `6.18`이라도 `pkvm-master-6.18`은 upstream 트리, `pkvm-mainline-6.18`은 ACK `android-mainline` 트리 위에 있다. 2-4절 참조.
 
 ### 참고: kernel.org 현황 (2026-08-06 기준)
 
@@ -268,7 +315,7 @@ EOL 날짜는 확정된 것이 아니다. 산업계 수요와 메인테이너 �
 | LTS 6.12 | `for-android16/pkvm-integration` | v6.12.0-rc2 베이스 |
 | LTS 6.6 | `pkvm-integration-6.6` | v6.6 베이스 |
 
-**패치 추출 자체는 `for-android/pkvm-master-6.18`에서 하는 편이 낫다.** 2-2절 실측대로 `pkvm-mainline-6.18`은 ACK `android-mainline` 스냅샷이라 GKI·ashmem·incfs 등 pKVM과 무관한 커밋이 대량으로 섞여 있다(v6.18 이후 3533 커밋, merge 1188개). 반면 `pkvm-master-6.18`은 v6.18-rc2 위에 pKVM 커밋 394개만 선형으로 쌓여 있고 merge가 0이라 `git format-patch`로 그대로 뽑을 수 있다. 두 브랜치의 pKVM 내용은 99% 동일하다.
+**패치 추출 자체는 `for-android/pkvm-master-6.18`에서 하는 편이 낫다.** 2-4절 실측대로 `pkvm-mainline-6.18`은 ACK `android-mainline` 스냅샷이라 GKI·ashmem·incfs 등 pKVM과 무관한 커밋이 대량으로 섞여 있다(v6.18 이후 3533 커밋, merge 1188개). 반면 `pkvm-master-6.18`은 v6.18-rc2 위에 pKVM 커밋 394개만 선형으로 쌓여 있고 merge가 0이라 `git format-patch`로 그대로 뽑을 수 있다. 두 브랜치의 pKVM 내용은 99% 동일하다.
 
 다만 `pkvm-master-6.18`은 2025-11-05 이후 갱신이 없고 베이스가 v6.18 정식이 아닌 **v6.18-rc2**다. 최신 수정분은 `pkvm-mainline-6.18`(2026-04-13) 또는 `pkvm-mainline-7.1`(2026-07-31)에서 따로 확인해야 한다.
 
