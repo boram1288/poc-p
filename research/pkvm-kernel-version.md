@@ -16,7 +16,7 @@ ACK의 pKVM 패치는 **ACK 브랜치별 LTS 버전**을 베이스로 한다. �
 - 6.18 소스는 **`pkvm-mainline-6.18`을 기준으로 삼는다.** 머지 대상은 경로 기반 실측과 수동 검토로 **673커밋 · 38,844라인**이었고, 2026-08-07 재실측과 전수 대조로 **658커밋**으로 확정했다. 차이 15건은 T2·T3에 국한되며 개별 SHA까지 특정했다. 8.1절 참조. 라인 수 38,844는 673 기준이다.
 - **`pkvm-master-6.18`은 뼈대로 쓸 수 없다.** 순서가 mainline과 사실상 같고(Spearman 0.9997) IOMMU 트랙이 통째로 빠져 있다. 투고 순서의 기준은 `pkvm-7.1-*` 태그 스택이다. 8.2절 4단계 참조.
 - 투고 단위는 **32시리즈**(코어 24 · IOMMU 7 · 검증 1)로 짰다. 8.3절 참조.
-- **v6.18 빌드 검증을 마쳤다.** IOMMU 스택까지 포함한 **715커밋** 트리를 clang과 gcc 양쪽에서 빌드하는 데 성공했다. 동작 검증은 하지 않았다. 9장 참조.
+- **v6.18 빌드 검증을 마쳤다.** IOMMU 스택과 EL2 벤더 모듈까지 포함한 **721커밋** 트리를 clang과 gcc 양쪽에서 빌드하는 데 성공했다. 동작 검증은 하지 않았다. 9장 참조.
 - **투고용 집합과 빌드용 집합은 다르다.** 8장의 658커밋은 투고 기준이라 `FROMLIST:`를 제외하는데, 이들은 v6.18에 없으므로 빌드에는 필수다. IOMMU 스택의 기반 파일이 여기 해당한다. 9.2절 참조.
 - **타깃 커널 버전은 6.18로 결정했다.** 근거는 5장 참조.
 
@@ -923,9 +923,9 @@ ACK `android17-6.18`과 대조해 누락을 잡는다. `pkvm-master-6.18`의 394
 
 pKVM 코드가 실제로 링크되었는지도 확인했다. gcc `vmlinux`에 `__kvm_nvhe_` 접두 pKVM 심볼이 92개 있다. `__pkvm_host_donate_hyp`, `__pkvm_host_share_ffa`, `__pkvm_init_vm` 등이 정상 링크되었다.
 
-### 9.2 2단계: IOMMU 포함 전량 (715커밋)
+### 9.2 2단계: IOMMU·EL2 모듈 포함 전량 (721커밋)
 
-1단계 브랜치 위에 나머지를 cherry-pick 했다. 최종 트리는 **715커밋**이다. v6.18 + pKVM 394 + 추가 318 + 빌드 수정 3이다. 변경 규모는 232파일 · 33,950 추가 · 3,506 삭제다.
+1단계 브랜치 위에 나머지를 cherry-pick 했다. 최종 트리는 **721커밋**이다. v6.18 + pKVM 394 + 추가 322 + 빌드 수정 5다. 변경 규모는 237파일 · 34,178 추가 · 3,506 삭제다.
 
 | 항목 | clang 18.1.3 (`LLVM=1`) | gcc 13.2 (`aarch64-linux-gnu-`) |
 |---|---|---|
@@ -933,6 +933,8 @@ pKVM 코드가 실제로 링크되었는지도 확인했다. gcc `vmlinux`에 `_
 | `arch/arm64/boot/Image` | 40.5M | 47.2M |
 | `vmlinux` | 429.8M | 160.2M |
 | `kvm_nvhe.o` (EL2) | 9.2M | 2.9M |
+| `pkvm_smc.ko` | 413K | 81K |
+| `pkvm_iommu_temp.ko` | 404K | 77K |
 | 오류 | 0 | 0 |
 | 경고 | 0 | 0 |
 
@@ -968,7 +970,28 @@ pKVM 코드가 실제로 링크되었는지도 확인했다. gcc `vmlinux`에 `_
 
 즉 8.1절의 T3 배제 30건에는 최소 1건의 오배제가, T2 채택 63건에는 최소 1건의 오탐이 있다. **경로 기반 필터의 한계다.** 확정 집합을 실제로 쓰기 전에 빌드로 교차 검증해야 한다.
 
-#### 빌드 수정 3건
+#### master판과 mainline판은 건드리는 파일이 다르다 (중요)
+
+같은 제목의 커밋이 두 브랜치에 모두 있어도 **변경 파일이 다르다.** master에는 `pkvm-smc` 같은 컴포넌트가 없으므로, master판 커밋은 그 파일을 고치지 않는다. master판을 쓰면 API 변경의 후속 수정이 조용히 빠진다.
+
+394커밋 전수 대조로 이런 커밋 2건을 찾았고, 둘 다 `pkvm_smc`를 깨뜨렸다.
+
+| 커밋 | master판이 놓친 파일 | 증상 |
+|---|---|---|
+| `Remove token from pKVM module registration path` | `drivers/misc/pkvm-smc/pkvm-smc.c` | `pkvm_load_el2_module()` 인자 수 불일치 |
+| `Automate pKVM module event registration` | `drivers/misc/pkvm-smc/pkvm/pkvm-smc.c` | 제거된 `register_hyp_event_ids()` 호출 |
+
+8.2절 5단계의 "master에 있는 것은 일괄 추출" 절차를 쓸 때는 **이 대조를 반드시 거쳐야 한다.** 재현 방법은 제목을 정규화해 양쪽 커밋을 짝지은 뒤 `git show --name-only`로 파일 집합을 비교하는 것이다.
+
+#### EL2 모듈 검증
+
+`pkvm_smc`는 pKVM **EL2 벤더 모듈**이다. 호스트가 TrustZone으로 보내는 SMC를 하이퍼바이저 단에서 거른다. 호스트 측이 `pkvm_load_el2_module()`로 EL2에 코드를 적재하고, 실제 판정은 EL2에서 이뤄진다. Kconfig가 스스로 템플릿이라고 밝히며 `depends on ... && m`이라 모듈로만 빌드된다.
+
+`CONFIG_PKVM_SMC_FILTER=m`으로 빌드해 `.ko` 생성까지 확인했다. 모듈에 `.hyp.text`, `.hyp.bss`, `.hyp.event_ids` 섹션과 `__kvm_nvhe_filter_smc`, `__kvm_nvhe_pkvm_smc_filter_hyp_init` 심볼이 들어 있다. **EL2 모듈 적재 경로가 실제로 컴파일된다는 뜻이다.** defconfig는 이 옵션을 켜지 않으므로 명시적으로 켜야 검증된다.
+
+이 영역은 8.4절이 upstream 수용 가능성 낮음으로 분류한 EL2 모듈 클러스터에 속한다. 빌드 대상으로는 유효하나 투고 시에는 별도 취급해야 한다.
+
+#### 빌드 수정 5건
 
 트리에 별도 커밋으로 남겼다.
 
@@ -977,13 +1000,16 @@ pKVM 코드가 실제로 링크되었는지도 확인했다. gcc `vmlinux`에 `_
 | `ac1d1ef38dc3` BUILD-FIX | ACK의 `include/linux/android_kabi.h` 추가 | 이 헤더 대신 `ANDROID_KABI_RESERVE` 사용부를 제거해야 한다 |
 | `fc2aca86ce81` Revert | `iommu: Add vendor data for custom iommu fault handler` 되돌림 | 애초에 대상에서 빼야 한다 |
 | `2e948c4a015d` BUILD-FIX | `is_dma_buf_file()`에 외부 링키지 부여 | ACK 커밋이 헤더 선언만 바꾸고 정의는 `static inline` 그대로다. v6.18에서는 `static declaration follows non-static declaration` 오류가 난다 |
+| `c386e32488de` BUILD-FIX | `pkvm_smc`를 tokenless `pkvm_load_el2_module()`에 맞춤 | mainline판 커밋을 쓰면 불필요하다 |
+| `281c1d3f36d5` BUILD-FIX | `pkvm_smc` EL2 측의 `register_hyp_event_ids()` 호출 제거 | 위와 같다 |
 
-#### 제외한 18건
+뒤의 두 건은 master판 커밋을 쓴 데서 온 것이다. mainline판을 적용하면 발생하지 않는다.
+
+#### 제외한 14건
 
 | 구분 | 수 | 사유 |
 |---|---:|---|
 | tracing `FROMLIST` | 8 | master의 ANDROID 판이 상위 버전이다. 중복 |
-| `pkvm_smc` 드라이버 | 4 | `drivers/misc/pkvm-smc` 독립 드라이버. 생성 커밋 순서 문제로 보류 |
 | 중복·빈 커밋 | 6 | 이미 반영되어 cherry-pick 시 빈 커밋이 되었다 |
 
 ### 9.3 리베이스 충돌 4건 (1단계)
@@ -1041,12 +1067,14 @@ make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- O=../obj-gcc defconfig
 - ACK 히스토리에는 **부모가 하나인데 제목이 `Merge ...`인 커밋**이 있다. `--no-merges`로 걸러지지 않으며, 그중 하나는 7만 파일을 건드린다. 제목으로도 걸러야 한다.
 - 충돌 판정에 `git diff --diff-filter=U`를 쓰면 안 된다. 파일 추가·삭제 충돌(`DU`, `AA`)을 놓친다. `git status --porcelain`의 상태 코드를 봐야 한다.
 - 같은 트리에서 `make`를 두 개 이상 돌리면 `fixdep` 오류로 빌드가 깨진다. 소스 오류로 오인하기 쉽다.
+- master판 커밋을 쓸 때는 mainline판과 변경 파일을 대조해야 한다. 9.2절 참조.
+- EL2 벤더 모듈(`PKVM_SMC_FILTER`, `PKVM_IOMMU_TEMPLATE`)은 `depends on ... && m`이라 defconfig가 켜지 않는다. `-m`으로 명시해야 그 경로가 컴파일된다.
 
 ### 9.5 검증되지 않은 것
 
 - **동작 검증은 하지 않았다.** 빌드 성공까지만 확인했다. 부팅과 pVM 생성은 미검증이다.
-- **`pkvm_smc` 드라이버 4건은 미적용이다.** `drivers/misc/pkvm-smc` 독립 드라이버이며 SMC 필터 기능이다. 필요하면 별도로 올려야 한다.
-- **빌드 수정 3건은 upstream 투고용이 아니다.** 9.2절 표의 "투고 시 처리"를 따라야 한다.
+- **빌드 수정 5건은 upstream 투고용이 아니다.** 9.2절 표의 "투고 시 처리"를 따라야 한다.
+- **EL2 모듈은 컴파일까지만 확인했다.** `pkvm_smc.ko`가 생성되고 `.hyp.text` 섹션을 갖는 것은 확인했으나, 실제 적재와 SMC 필터링 동작은 미검증이다.
 - 8.1절 확정 집합(658)과 이번 빌드 집합은 다르다. 9.2절 참조.
 
 ---
