@@ -531,6 +531,34 @@ diff 규모를 재면서 `drivers/misc/uid_sys_stats.c`와 `TEST_MAPPING`이 상
 
 반면 `arm-smmu-v3.c`(8커밋), `arm-smmu-v3-common.c`(6커밋)는 커밋당 변경량이 크지만 커밋 수가 적다. 큰 덩어리를 통째로 옮기는 형태라 순서 의존이 낮다.
 
+#### arch/arm64 헤더·부팅 계층 판정 (확정)
+
+문서가 기록한 "2,674라인 33파일"은 실측으로 재현된다. 추가 2,276 / 삭제 398 / 고유 33파일이다. 구성은 T1 561건이 만드는 31파일에 T5 채택 3건이 더하는 2파일(`asm/hyp_image.h`, `kernel/alternative.c`)이다.
+
+**33파일 전부 pKVM 사유로 변경되었다. `unrelated` 판정은 0건이다.** 따라서 이 영역을 이유로 673커밋을 줄일 필요는 없다.
+
+| 판정 | 파일 | 라인 |
+|---|---|---|
+| pkvm-only (v6.18에 없는 신규 파일) | 5 | 889 |
+| shared / KVM 소유 | 11 | 1,335 |
+| shared / arm64 코어 | 17 | 450 |
+| unrelated | 0 | 0 |
+
+경계선이었던 두 건이다. `arch/arm64/kernel/head.S`(HCR_ATA)와 `arch/arm64/include/asm/el2_setup.h`(MPAM2_HOST_FLAGS)는 각각 `kvm/arm.c`, `hyp/switch.h`를 함께 건드리고 커밋 본문이 호스트 격리 목적을 명시한다. 유지가 맞다.
+
+집계 시 주의할 함정 두 가지다.
+
+- `52820b3c1e83`(gen-hyprel 이동)은 rename이라 numstat이 0/0이다. pathspec에서 `arch/arm64/kvm`을 빼면 원본이 안 보여 +462로 잘못 잡힌다.
+- T3 커밋 `a1dfc257ae63`(`arch/arm64/mm/init.c` +23/-3)은 673 집합에 없다. 삭제 398이 정확히 맞아 확인된다. 이는 집계 누락이 아니라 의도적 배제다. 제목이 `ANDROID: arm64/mm: Add command line option to make ZONE_DMA32 empty`로, 3차 정제에서 배제한 `ZONE_DMA32` 옵션 건이다. 본문도 GKI 파트너의 메모리 튜닝 목적이며 pKVM과 무관하다.
+
+##### Upstream 반려 위험
+
+`shared/arm64` 17파일 450라인 중 11파일 406라인이 pKVM EL2 모듈 로딩에 묶여 있다. 파일은 `kernel/module.c`(269), `asm/module.h`(52), `asm/module.lds.h`(44), `asm/assembler.h`(15), `kernel/module-plts.c`(6), `asm/memory.h`(5), `arch/arm64/Makefile`(5), `mm/init.c`(4), `tools` 계열(6)이다.
+
+빌드 영향은 `CONFIG_KVM`과 `__KVM_NVHE_HYPERVISOR__` 가드로 이미 좁혀져 있다. 쟁점은 가드가 아니라 설계 방향이다. 커밋 `f92ff4fd5ae8` 본문은 해당 모듈이 프로프라이어터리이며 GPL 심볼을 쓰면 안 된다고 밝히고, `EXPORT_SYMBOL_GPL`을 `ASM_BUILD_BUG()`로 재정의한다. arm64/KVM 메인테이너 수용 가능성은 낮다고 본다(평가).
+
+나머지는 중간 위험 2파일 35라인(`vmlinux.lds.S`, `mm/fault.c`), 낮은 위험 4파일 9라인(`head.S`, `el2_setup.h`, `asm-offsets.c`, `alternative.c`)이다. 낮은 위험 4건은 단독 투고가 가능하다.
+
 #### `pkvm-master-6.18` 커버리지
 
 673커밋의 고유 제목 673개를 `pkvm-master-6.18`과 대조했다.
@@ -657,9 +685,20 @@ git cherry-pick -x <sha>
 
 ```bash
 make ARCH=arm64 defconfig
-./scripts/config -e KVM -e NVHE_EL2_DEBUG -e PROTECTED_NVHE_STACKTRACE
+./scripts/config -e KVM -e PKVM_DEBUG -e PKVM_DISABLE_STAGE2_ON_PANIC -e PKVM_STACKTRACE
 make ARCH=arm64 -j"$(nproc)"
 ```
+
+심볼 개명은 실측으로 확인했다. upstream v6.18의 `arch/arm64/kvm/Kconfig`에는 `NVHE_EL2_DEBUG`와 `PROTECTED_NVHE_STACKTRACE`가 있으나, 기준 트리에는 없다. 두 ANDROID 커밋이 이름을 바꿨다.
+
+| 기존 심볼 (upstream v6.18) | 변경 후 (pKVM 트리) | 커밋 |
+|---|---|---|
+| `NVHE_EL2_DEBUG` | `PKVM_DEBUG` | `62c0dcbb` (2025-02-21) |
+| `PROTECTED_NVHE_STACKTRACE` | `PKVM_STACKTRACE` | `8d88e567` (2025-02-21) |
+
+새 제약이 하나 붙었다. `PKVM_STACKTRACE`는 `PKVM_DISABLE_STAGE2_ON_PANIC`에 의존하며 후자의 기본값은 `n`이다. 따라서 함께 켜야 한다.
+
+Kconfig만으로는 부족하다. 실제 보호 모드로 부팅하려면 커널 커맨드라인에 `kvm-arm.mode=protected`가 있어야 한다. `gki_defconfig`는 이를 `CONFIG_CMDLINE`에 내장하는 방식을 쓴다.
 
 ACK `android17-6.18`과 대조해 누락을 잡는다. `pkvm-master-6.18`의 394커밋 중 378개가 ACK에 있으므로, ACK를 정답지로 쓸 수 있다.
 
@@ -678,13 +717,50 @@ ACK `android17-6.18`과 대조해 누락을 잡는다. `pkvm-master-6.18`의 394
 | 상류 진행과 충돌 | protected guest는 upstream 진행 중 (7.2절) | 해당 영역은 upstream 시리즈 추종, 독자 투고 지양 |
 | 소스 갱신 정지 | `pkvm-master-6.18`은 2025-11-05 이후 갱신 없음 | `pkvm-mainline-6.18`을 기준 트리로 유지 |
 | 제목 기반 선별의 오판 | 제목에 `PKVM`이 있어도 `gki_defconfig`만 바꾸는 커밋이 존재 | 제목이 아니라 **변경 파일**로 판정 |
+| EL2 모듈 로딩이 전체를 막음 | `shared/arm64` 17파일 450라인 중 11파일 406라인(90%)이 pKVM EL2 모듈 로딩 하나에 묶여 있다. 프로프라이어터리 벤더 모듈을 EL2에 올리는 설계라 메인테이너 수용 가능성이 낮다 | 해당 11파일 클러스터를 별도 시리즈로 격리해 마지막에 투고. 선행 시리즈가 막히지 않게 한다 |
 
 ### 8.4 미결 사항
 
-- **`arch/arm64` 헤더·부팅 계층의 경계.** 2,674라인 33파일이 잡혔으나 이 영역은 pKVM 전용이 아니다. 개별 판정이 더 필요하다.
-- **머지 대상 외 참고 항목.** upstream 머지 대상은 아니지만 빌드·검증에 필요한 정보다.
-  - `gki_defconfig`·`microdroid_defconfig`의 pKVM 관련 옵션 (PKVM guest driver, pviommu, VFIO platform, `PTDUMP_STAGE2_DEBUGFS`). 6단계 Kconfig 설정의 근거로 쓴다.
-  - `ANDROID: Reintroduce support for CONFIG_CMDLINE_EXTEND`. AVF 게스트 부팅 요건이나 upstream이 제거한 기능이라 별도 판단이 필요하다.
+- **T5 원시 집합 수치 불일치.** 8.1절 T4·T5 표는 T5를 "원시 101 / ACK 전용 87 / 코드 포함 14"로 적었으나 재실측은 151 / 132 / 19다. 채택 3건은 동일해 673에는 영향이 없다. 원시 수치의 산출 기준 차이로 보이나 원인은 미확인이다.
+
+#### defconfig pKVM 옵션 (확정)
+
+`gki_defconfig`와 `microdroid_defconfig`에서 pKVM·가상화 관련 고유 심볼 20개를 수집했다. 그중 upstream v6.18에 없는 것은 3개다.
+
+| 심볼 | 위치 | 도입 커밋 |
+|---|---|---|
+| `VFIO_PKVM_IOMMU` | `drivers/vfio/Kconfig` | `6b83b3c7` ANDROID: drivers/vfio: Add VFIO_PKVM_IOMMU (2023-11-13) |
+| `PKVM_PVIOMMU` | `drivers/iommu/Kconfig` | `acf2e802` ANDROID: drivers: iommu: pviommu: Add basic driver structure (2023-04-18) |
+| `CMDLINE_EXTEND` | `arch/arm64/Kconfig` | 신규 심볼이 아니다. upstream이 `cae118b6acc3`으로 "Kernel command line type" choice에서 이 항목만 제거했다. choice 구조 자체는 그 전부터 있었고 default는 `CMDLINE_FROM_BOOTLOADER`다 |
+
+`ARM_PKVM_GUEST`는 두 defconfig 모두 `y`이고 upstream v6.18에 이미 있다(`drivers/virt/coco/pkvm-guest/Kconfig`). 별도 대응이 필요 없다.
+
+`ARM_SMMU`, `NVHE`, `HYP`, `PROTECTED` 키워드는 두 defconfig 어디에도 `CONFIG_` 라인으로 없었다. `PROTECTED`는 `CONFIG_CMDLINE` 문자열 안의 `kvm-arm.mode=protected`에만 등장한다.
+
+확인 불가 항목이 둘 남았다.
+
+- `ARM_PKVM_GUEST`가 select 하는 `ARCH_HAS_VIRTIO_BALLOON_HYP_OPS`의 v6.18 존재 여부
+- `PKVM_STACKTRACE` + `PKVM_DISABLE_STAGE2_ON_PANIC` 조합의 실제 빌드 성공 여부. Kconfig 파일 판독으로만 판단했고 빌드는 돌리지 않았다.
+
+#### CONFIG_CMDLINE_EXTEND 판단 (확정)
+
+결론: 머지 대상에서 제외한다. Android 다운스트림 전용으로 유지한다.
+
+근거를 표로 정리한다.
+
+| 항목 | 내용 |
+|---|---|
+| upstream 제거 | cae118b6acc3 (Will Deacon, Linux 5.12, 2021-03) |
+| 제거 사유 | 설계 불일치. 문서상 동작은 "부트로더 인자를 CONFIG_CMDLINE 뒤에 append"인데 arm64 FDT 처리는 반대로 동작. EFI stub 및 idreg override의 파싱 순서와도 어긋남. |
+| 대체안 | CMDLINE_PREPEND/APPEND 제안 (Daniel Walker, 2019): 미머지. devicetree `/chosen/bootargs-append` (2024-05 문서화만, drivers/of/fdt.c 구현 없음) |
+| 현황 (2026-08) | arch/arm64/Kconfig에 CMDLINE_EXTEND 없음. arch/arm/Kconfig(32비트 ARM)에는 남아 있음. |
+| 재도입 시도 | George Davis(2022-08), Chris Packham(2023-03) 등: 모두 미머지 |
+| Android 패치 | `ANDROID: Support CONFIG_CMDLINE_EXTEND`, Carlos Llamas (2021-09-19). 원 저자 Doug Anderson/Colin Cross. idreg-override.c까지 고쳐 Will Deacon이 지적한 순서 불일치를 해소함. 기술적으로는 upstream 요구 방향과 부합. 커밋 메시지에 AVF/microdroid/pKVM 언급 없음. |
+| pKVM 소속 | 커밋 `e5d7c84f8167`는 `Bug: 458241298` 태그를 달고 있으며, 서명자가 Keir Fraser, Fuad Tabba(pKVM 개발자)다. 채택된 T5 커밋 `8765527b3df1`, `d833601fdcb3`과 동일한 버그 ID다. 본문이 crosvm의 device-tree `bootargs` 전달을 명시해 AVF 게스트 부팅 요건이다. |
+| 필요성 | AVF/microdroid가 이 옵션을 직접 요구한다는 공개 근거 확인 불가. 관련 Buganizer 120440972는 비공개. GKI는 gki_defconfig의 CONFIG_CMDLINE에 `kvm-arm.mode=protected`를 내장하므로 벤더 device tree bootargs와 병합할 수단이 필요하다는 정황은 있으나 추론. pKVM 프로젝트 차원에서는 실제로 요구된다. |
+| 배제 사유 | **Upstream 정책 충돌**. pKVM 무관이 아니다. upstream이 `arm64: Drop support for CMDLINE_EXTEND`로 의도적으로 제거한 기능이므로 재투고는 결정된 사안을 되돌리는 것이다. 기술적 개선(idreg-override.c 순서 수정)만으로는 정책 거부를 극복하기 어렵다. |
+
+권고: 굳이 upstream에 올린다면 PREPEND/APPEND 통합 형태로 재작성해야 하며, 단순 재도입은 반려 가능성이 높다.
 
 ---
 
@@ -700,6 +776,9 @@ ACK `android17-6.18`과 대조해 누락을 잡는다. `pkvm-master-6.18`의 394
 - [Implement a pKVM vendor module (AOSP)](https://source.android.com/docs/core/virtualization/pkvm-modules)
 - [kernel.org](https://www.kernel.org/)
 - [kernel.org Releases (LTS EOL 표)](https://www.kernel.org/category/releases.html)
+- [arm64: Drop support for CMDLINE_EXTEND (cae118b6acc3)](https://github.com/torvalds/linux/commit/cae118b6acc309539b33339e846cbb19187c164c)
+- [ANDROID: Support CONFIG_CMDLINE_EXTEND (common-patches)](https://android.googlesource.com/kernel/common-patches/+/18dcf7a0b55ecc7e289cee22751367969b8dafcb/android-mainline/ANDROID-Support-CONFIG_CMDLINE_EXTEND.patch)
+- [CMDLINE_PREPEND/APPEND 제안 (Daniel Walker, 2019)](https://lore.kernel.org/lkml/20190319232448.45964-2-danielwa@cisco.com/)
 - [Linux 6.18 LTS / 6.12 LTS / 6.6 LTS Support Periods Extended (Phoronix, 2026-02-25)](https://www.phoronix.com/news/Linux-6.18-LTS-6.12-6.6-Extend)
 - [Linux kernel version history (Wikipedia)](https://en.wikipedia.org/wiki/Linux_kernel_version_history)
 - [Linux Kernel 7.0 Reaches End of Life (9to5Linux)](https://9to5linux.com/linux-kernel-7-0-reaches-end-of-life-its-time-to-upgrade-to-linux-kernel-7-1)
