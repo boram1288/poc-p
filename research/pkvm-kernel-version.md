@@ -16,6 +16,7 @@ ACK의 pKVM 패치는 **ACK 브랜치별 LTS 버전**을 베이스로 한다. �
 - 6.18 소스는 **`pkvm-mainline-6.18`을 기준으로 삼는다.** 머지 대상은 경로 기반 실측과 수동 검토로 **673커밋 · 38,844라인**이었고, 2026-08-07 재실측과 전수 대조로 **658커밋**으로 확정했다. 차이 15건은 T2·T3에 국한되며 개별 SHA까지 특정했다. 8.1절 참조. 라인 수 38,844는 673 기준이다.
 - **`pkvm-master-6.18`은 뼈대로 쓸 수 없다.** 순서가 mainline과 사실상 같고(Spearman 0.9997) IOMMU 트랙이 통째로 빠져 있다. 투고 순서의 기준은 `pkvm-7.1-*` 태그 스택이다. 8.2절 4단계 참조.
 - 투고 단위는 **32시리즈**(코어 24 · IOMMU 7 · 검증 1)로 짰다. 8.3절 참조.
+- **v6.18 빌드 검증을 마쳤다.** `pkvm-master-6.18`의 394커밋을 v6.18 위로 리베이스해 clang과 gcc 양쪽에서 빌드에 성공했다. 충돌은 4건뿐이었다. 동작 검증과 IOMMU 트랙은 미포함이다. 9장 참조.
 - **타깃 커널 버전은 6.18로 결정했다.** 근거는 5장 참조.
 
 ---
@@ -886,7 +887,79 @@ ACK `android17-6.18`과 대조해 누락을 잡는다. `pkvm-master-6.18`의 394
 
 ---
 
-## 9. 참고 자료
+## 9. v6.18 빌드 검증 (실행 완료)
+
+- 실행일: 2026-08-07
+- 목표: upstream 투고가 아니라 **v6.18 위에서 pKVM 패치가 빌드되는지 확인**하는 것으로 범위를 좁혔다. 따라서 8장의 토픽 분류·시리즈 분할안은 이번 검증에 쓰지 않았다. 적용 순서는 시간순 그대로다.
+
+### 9.1 적용 범위와 결과
+
+`for-android/pkvm-master-6.18`의 **394커밋을 v6.18-rc2에서 v6.18로 리베이스**했다. IOMMU 트랙 162커밋은 이번 범위에서 제외했다.
+
+| 항목 | clang 18.1.3 (`LLVM=1`) | gcc 13.2 (`aarch64-linux-gnu-`) |
+|---|---|---|
+| 종료 코드 | 0 | 0 |
+| `arch/arm64/boot/Image` | 38.6M | 47.1M |
+| `vmlinux` | 407.8M | 159.8M |
+| `kvm_nvhe.o` (EL2) | 6.3M | 2.3M |
+| 오류 | 0 | 0 |
+| 경고 | 0 | 0 |
+
+**양쪽 컴파일러 모두 성공했다.** 크기 차이는 clang이 `debug_info` 포함 in-tree 빌드, gcc가 out-of-tree 빌드인 데서 온다.
+
+pKVM 코드가 실제로 링크되었는지도 확인했다. gcc `vmlinux`에 `__kvm_nvhe_` 접두 pKVM 심볼이 92개 있다. `__pkvm_host_donate_hyp`, `__pkvm_host_share_ffa`, `__pkvm_init_vm` 등이 정상 링크되었다.
+
+### 9.2 리베이스 충돌 4건
+
+394커밋 중 충돌은 4건뿐이었다. 모두 upstream v6.18이 rc2 이후 추가한 보안 강화 코드와 pKVM 패치가 같은 줄에서 겹친 경우다.
+
+| 커밋 | 파일 | 충돌 내용 | 해소 |
+|---|---|---|---|
+| `fcb227c407f4` Restrict host-to-hyp MMIO donations | `hyp/nvhe/mem_protect.c` | upstream `pfn_range_is_valid` 대 락 위치 이동 | 검사 유지, 락은 호출자로 이동 |
+| `a42c32d5ab8c` mem range overflow checks | `hyp/nvhe/mem_protect.c` 4곳 | `pfn_range_is_valid` 대 `check_shl_overflow` | 둘 다 유지. 후자는 `size` 대입도 겸하므로 필수 |
+| `f78693fbb6c4` Support multiple FF-A partition buffers | `hyp/nvhe/ffa.c` | 지역 변수 선언 겹침 | 둘 다 선언 |
+| `8c177202398a` Handle guest FF-A share/lend/reclaim | `hyp/nvhe/ffa.c` | upstream `check_add_overflow` 대 오류 처리 방식 변경 | 검사 유지, 새 오류 스타일(`ffa_to_smccc_error`) 적용 |
+
+네 건 모두 **upstream 쪽 검사를 살리는 방향**으로 해소했다. 기능 손실은 없다.
+
+### 9.3 절차
+
+```bash
+# 트리 준비
+git clone --filter=blob:none --single-branch \
+    -b for-android/pkvm-mainline-6.18 \
+    https://android-kvm.googlesource.com/linux
+# v6.18 태그가 원격에 없으므로 릴리스 커밋을 직접 태그
+git tag v6.18     7d0a66e4bb9081d75c82ec4957c50034cb0ea449
+git tag v6.18-rc2 211ddde0823f1442e4ad052a2f30f050145ccada
+git switch -c pkvm-6.18-build v6.18
+
+# 394커밋 리베이스
+git rebase --onto v6.18 v6.18-rc2 origin/for-android/pkvm-master-6.18
+
+# 설정과 빌드 (clang)
+make ARCH=arm64 LLVM=1 defconfig
+./scripts/config -e KVM -e PKVM_DEBUG -e PKVM_DISABLE_STAGE2_ON_PANIC -e PKVM_STACKTRACE
+make ARCH=arm64 LLVM=1 olddefconfig
+make ARCH=arm64 LLVM=1 -j"$(nproc)"
+
+# gcc 검증은 out-of-tree 로 분리 (사전에 make mrproper 필요)
+make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- O=../obj-gcc defconfig
+```
+
+`android-kvm` 저장소에는 `v6.18` 태그가 없다. 릴리스 커밋을 찾아 직접 태그해야 한다.
+
+`PKVM_DEBUG`를 켜면 `PKVM_STRICT_CHECKS`, `PKVM_SELFTESTS`, `PKVM_DUMP_TRACE_ON_PANIC`이 함께 켜진다.
+
+### 9.4 검증되지 않은 것
+
+- **동작 검증은 하지 않았다.** 빌드 성공까지만 확인했다. 부팅과 pVM 생성은 미검증이다.
+- **IOMMU 트랙 162커밋은 미적용이다.** `pkvm-master-6.18`에 없어 `pkvm-mainline-6.18`에서 개별 cherry-pick이 필요하며, 충돌이 훨씬 많을 것으로 본다.
+- 8장이 확정한 658커밋 전량 적용은 하지 않았다. 이번 검증은 394커밋 기준이다.
+
+---
+
+## 10. 참고 자료
 
 - [android-kvm/linux refs (전체 브랜치·태그 목록)](https://android-kvm.googlesource.com/linux/+refs)
 - [for-android/pkvm-mainline-7.1](https://android-kvm.googlesource.com/linux/+/refs/heads/for-android/pkvm-mainline-7.1)
