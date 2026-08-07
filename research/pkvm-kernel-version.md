@@ -13,7 +13,7 @@ ACK의 pKVM 패치는 **ACK 브랜치별 LTS 버전**을 베이스로 한다. �
 - 현재 최신 통합 브랜치: `for-android/pkvm-mainline-7.1` (Makefile v7.1.0)
 - ACK(`kernel/common`)는 pKVM 개발의 원본 트리가 아니라 **하류(downstream) 배포처**다.
 - **주의**: `pkvm-mainline-<VER>`는 순수 mainline 위 리베이스가 아니라 ACK `android-mainline` 스냅샷이다. 이름이 헷갈리기 쉽다.
-- 6.18 소스는 **`pkvm-mainline-6.18`을 기준으로 삼고 `pkvm-master-6.18`은 추출 보조로 쓴다.** 머지 대상은 경로 기반 실측으로 **713커밋**이며, master는 그중 절반인 356개만 갖고 있다. 2-4절과 8장 참조.
+- 6.18 소스는 **`pkvm-mainline-6.18`을 기준으로 삼고 `pkvm-master-6.18`은 추출 보조로 쓴다.** 머지 대상은 경로 기반 실측과 수동 검토로 **705커밋**이며, master는 그중 356개만 갖고 있다. 2-4절과 8장 참조.
 - **타깃 커널 버전은 6.18로 결정했다.** 근거는 5장 참조.
 
 ---
@@ -50,7 +50,7 @@ flowchart LR
     AMAIN -->|"베이스"| ML71
     AMAIN -->|"6.18 시점 fork"| A17
     MASTER -->|"378/394 커밋 반영"| A17
-    MASTER -.->|"진부분집합<br/>대상 713 중 356만 보유"| MAINLINE
+    MASTER -.->|"진부분집합<br/>대상 705 중 356만 보유"| MAINLINE
     MASTER -.->|"토픽 분할 투고"| UPST
     UPST -.->|"LKML 리뷰 후 머지"| LINUS
 ```
@@ -153,24 +153,24 @@ ACK 반영도 확인했다. `kernel/common`의 `android17-6.18`을 받아 대조
 
 #### master는 mainline의 진부분집합이다 (중요)
 
-8.1절의 경로 기반 대상 집합 713개를 기준으로 양방향 비교했다.
+8.1절의 경로 기반 대상 집합 705개를 기준으로 양방향 비교했다.
 
 | 구분 | 개수 |
 |---|---|
-| 머지 대상 (경로 기반 확정) | 713 |
+| 머지 대상 (경로 기반 + 수동 검토 확정) | 705 |
 | 그중 `pkvm-master-6.18`에 있는 것 | **356** |
-| **`pkvm-mainline-6.18`에만 있는 것** | **356** |
+| **`pkvm-mainline-6.18`에만 있는 것** | **348** |
 | `pkvm-master-6.18`에만 있는 것 | **0** |
 
-**master에만 있는 커밋은 하나도 없다.** 즉 `pkvm-master-6.18`은 깨끗하지만 **불완전하다**. 대상의 정확히 절반만 갖고 있다. 2025-11-05에 갱신이 멈춘 스냅샷이라 이후 작업이 통째로 빠져 있다.
+**master에만 있는 커밋은 하나도 없다.** 즉 `pkvm-master-6.18`은 깨끗하지만 **불완전하다**. 대상의 51%만 갖고 있다. 2025-11-05에 갱신이 멈춘 스냅샷이라 이후 작업이 통째로 빠져 있다.
 
-master에 없는 356개는 특정 기능 영역에 몰려 있다.
+master에 없는 348개는 특정 기능 영역에 몰려 있다.
 
 - device assignment (`Add arch function for device assignment`, `Add HVC to donate/reclaim assignable MMIO`)
 - pvIOMMU (`Add documentation for pvIOMMU UAPI`, `Add extra IOMMU idmap callbacks`)
 - DMA-BUF 기반 pVM 메모리 (`Accept DMA-BUF mappings to back pVMs`)
 - guest share/unshare 하이퍼콜의 range 확장
-- defconfig (`gki_defconfig`, `microdroid_defconfig`의 PKVM guest driver 활성화)
+- pKVM selftest (`tools/testing/selftests/kvm/arm64/pkvm.c`) 및 hyp tracefs 테스트
 
 따라서 **머지 대상 목록을 master만 보고 확정하면 안 된다.**
 
@@ -178,12 +178,12 @@ master에 없는 356개는 특정 기능 영역에 몰려 있다.
 
 | 목적 | 사용할 브랜치 | 근거 |
 |---|---|---|
-| 머지 대상 **전체 목록 확정** | `pkvm-mainline-6.18` | 대상 713개 전량 보유. master는 356개 누락 |
+| 머지 대상 **전체 목록 확정** | `pkvm-mainline-6.18` | 대상 705개 전량 보유. master는 348개 누락 |
 | 패치 시리즈 **초안 추출** | `pkvm-master-6.18` | v6.18-rc2 위 선형 394커밋, merge 0. `git format-patch` 직행 가능 |
 | ACK/GKI 통합 환경 빌드·검증 | `pkvm-mainline-6.18` | ACK `android17-6.18`과 사실상 동일 구성 |
 | 최신 pKVM 개발 현황 추적 | `pkvm-mainline-7.1` | 2026-07-31 tip. 가장 활발 |
 
-권장 순서는 이렇다. `pkvm-mainline-6.18`에서 머지 대상 713개를 확정하고, 그중 `pkvm-master-6.18`에 있는 356개는 선형 시리즈로 그대로 뽑는다. 나머지 356개는 `pkvm-mainline-6.18`에서 개별 cherry-pick 한다. 상세는 8장이다.
+권장 순서는 이렇다. `pkvm-mainline-6.18`에서 머지 대상 705개를 확정하고, 그중 `pkvm-master-6.18`에 있는 356개는 선형 시리즈로 그대로 뽑는다. 나머지 348개는 `pkvm-mainline-6.18`에서 개별 cherry-pick 한다. 상세는 8장이다.
 
 `pkvm-master-<VER>` 계열은 6.17과 6.18에만 존재하고 7.1용은 없다. 이 계열이 계속 유지될지는 확인되지 않았으므로 의존도를 낮춰 두는 편이 안전하다.
 
@@ -339,22 +339,22 @@ EOL 날짜는 확정된 것이 아니다. 산업계 수요와 메인테이너 �
 
 | 역할 | 사용할 브랜치 | 근거 |
 |---|---|---|
-| **① 머지 대상 목록 확정 (기준 트리)** | **`for-android/pkvm-mainline-6.18`** | 머지 대상 713커밋 전량 보유. 2026-04-13까지 갱신 |
+| **① 머지 대상 목록 확정 (기준 트리)** | **`for-android/pkvm-mainline-6.18`** | 머지 대상 705커밋 전량 보유. 2026-04-13까지 갱신 |
 | **② 패치 시리즈 초안 추출** | **`for-android/pkvm-master-6.18`** | v6.18-rc2 위 선형 394커밋, merge 0. `git format-patch` 직행 |
 | ③ ACK/GKI 환경 빌드·검증 | `for-android/pkvm-mainline-6.18` | ACK `android17-6.18`과 사실상 동일 구성 |
 | ④ 최신 개발 현황 대조 | `for-android/pkvm-mainline-7.1` | 2026-07-31 tip |
 
 #### 두 브랜치를 나눠 쓰는 이유
 
-**mainline이 기준인 이유**는 완전성이다. `pkvm-master-6.18`은 2025-11-05에 멈춘 스냅샷이라 머지 대상 713개 중 356개만 갖고 있다. **절반인 356개가 누락**되어 있으며 device assignment, pvIOMMU, DMA-BUF 기반 pVM 메모리 등 통째로 빠진 기능 영역이 있다. 반대로 master에만 있는 커밋은 0개다. 목록 확정을 master로 하면 기능이 누락된다. 상세는 2-4절이다.
+**mainline이 기준인 이유**는 완전성이다. `pkvm-master-6.18`은 2025-11-05에 멈춘 스냅샷이라 머지 대상 705개 중 356개만 갖고 있다. **348개가 누락**되어 있으며 device assignment, pvIOMMU, DMA-BUF 기반 pVM 메모리 등 통째로 빠진 기능 영역이 있다. 반대로 master에만 있는 커밋은 0개다. 목록 확정을 master로 하면 기능이 누락된다. 상세는 2-4절이다.
 
 **master를 함께 쓰는 이유**는 추출 편의다. `pkvm-mainline-6.18`은 ACK `android-mainline` 스냅샷이라 GKI·ashmem·incfs 등 pKVM과 무관한 커밋이 대량으로 섞여 있다(v6.18 이후 3533커밋, merge 1188개). 여기서 pKVM만 골라내는 작업이 만만치 않다. `pkvm-master-6.18`은 그 선별을 이미 끝내 둔 결과물이라 356개를 그대로 뽑을 수 있다.
 
 #### 권장 절차
 
-1. `pkvm-mainline-6.18`에서 머지 대상을 확정한다. 경로 기반 실측으로 **713개**다.
+1. `pkvm-mainline-6.18`에서 머지 대상을 확정한다. 경로 기반 실측과 수동 검토로 **705개**다.
 2. 그중 `pkvm-master-6.18`에 있는 356개는 선형 시리즈로 일괄 추출한다.
-3. 나머지 356개는 `pkvm-mainline-6.18`에서 개별 cherry-pick 한다.
+3. 나머지 348개는 `pkvm-mainline-6.18`에서 개별 cherry-pick 한다.
 4. 베이스 차이에 주의한다. master는 **v6.18-rc2** 기준이므로 v6.18 정식 위에 올릴 때 재정렬이 필요할 수 있다.
 
 단계별 명령과 리스크는 **8장 실행 계획**에 정리했다.
@@ -406,20 +406,60 @@ upstream **v6.18** 위에 pKVM 패치를 올리는 실제 작업 절차다. 5장
 - 방법: `git clone --filter=blob:none --depth=3000`으로 트리까지 받아 `v6.18..for-android/pkvm-mainline-6.18` 구간을 **파일 경로 기준**으로 집계
 - 필터: `ANDROID:` 계열만 채택. `UPSTREAM:`/`FROMGIT:`/`FROMLIST:`와 `ANDROID: GKI/INCFS/OWNERS`는 제외
 
-**머지 대상은 713 커밋이다.**
+**머지 대상은 705 커밋이다.** T4·T5는 전수 수동 검토를 마쳤다.
 
-| 계층 | 경로 | 커밋 수 |
-|---|---|---|
-| T1 코어 KVM/hyp | `arch/arm64/kvm`, `arch/arm64/include/asm/kvm*`, `include/kvm`, `virt/kvm`, `Documentation/virt/kvm` | **561** |
-| T2 IOMMU/SMMU | `drivers/iommu`, iommu 헤더 | **63** |
-| T3 장치·메모리 주변 | `drivers/virt`, `drivers/vfio`, `drivers/dma-buf`, `kernel/dma`, `drivers/misc`, `drivers/virtio` | **67** |
-| T4 셀프테스트 (선별) | `tools/testing/selftests/kvm`, `hyp-trace` | **15** |
-| T5 arm64 기타 (선별) | `arch/arm64/kernel`, `arch/arm64/configs` | **7** |
-| | **합계** | **713** |
+| 계층 | 경로 | 원시 | 채택 |
+|---|---|---|---|
+| T1 코어 KVM/hyp | `arch/arm64/kvm`, `arch/arm64/include/asm/kvm*`, `include/kvm`, `virt/kvm`, `Documentation/virt/kvm` | 561 | **561** |
+| T2 IOMMU/SMMU | `drivers/iommu`, iommu 헤더 | 63 | **63** |
+| T3 장치·메모리 주변 | `drivers/virt`, `drivers/vfio`, `drivers/dma-buf`, `kernel/dma`, `drivers/misc`, `drivers/virtio` | 67 | **67** |
+| T4 셀프테스트 | `tools/testing/selftests/kvm`, `hyp-trace` | 185 | **11** |
+| T5 arm64 기타 | `arch/arm64/kernel`, `arch/arm64/configs` | 101 | **3** |
+| | **합계** | 977 | **705** |
 
-계층은 상위 우선 배타 할당이다. 중복 계산은 없다.
+계층은 상위 우선 배타 할당이다. 중복 계산은 없다. 코드 본체는 T1~T3의 691커밋이다.
 
-**코드 본체는 T1~T3의 691커밋이다.** T4와 T5는 원시 집계가 각각 185개, 101개였으나 대부분 pKVM과 무관했다. `gki_defconfig`의 NVME·THERMAL 활성화, Bazel 빌드 타깃 정리 같은 항목이다. pKVM 키워드가 있는 15개와 7개만 남겼다. **이 두 계층은 수동 검토가 필요하다.**
+#### T4·T5 수동 검토 결과
+
+원시 286개를 파일 경로와 커밋 본문까지 확인해 분류했다. **채택은 14개뿐이다.**
+
+**1차 배제 — upstream에 존재하지 않는 파일만 건드리는 커밋**
+
+`arch/*/configs/*defconfig`, `BUILD.bazel`, `*.bzl`, `*.fragment`, `build.config`, `OWNERS`는 ACK 전용이다. upstream 트리에 대응 파일이 없으므로 머지 자체가 성립하지 않는다.
+
+| 계층 | 원시 | ACK 전용 | 코드 포함 |
+|---|---|---|---|
+| T4 | 185 | 142 | 43 |
+| T5 | 101 | 87 | 14 |
+
+여기서 `ANDROID: ARM64: gki_defconfig: Enable PKVM guest driver`, `ANDROID: gki: Enable pkvm pviommu driver` 같이 **제목에 pKVM이 들어가지만 defconfig만 바꾸는 커밋**이 걸러진다. 직전 키워드 휴리스틱이 이들을 잘못 채택했다.
+
+**2차 선별 — 코드 커밋 57개 중 pKVM 관련만**
+
+T4 채택 11건이다.
+
+- `tools/testing/selftests/kvm/arm64/pkvm.c` — pkvm selftest 신설, PIE/POE 테스트, 성공 출력 (3건)
+- `tools/testing/selftests/hyp-trace/` — hyp tracefs ftrace 테스트 (1건)
+- `kvm_util.h` / `kvm_util.c` — protected VM 타입 추가, vcpu iterator 수정, VM fd 종료 후 메모리 정리, guest global memory 읽기 매크로, 주석 (5건)
+- `ucall_common.h` / `ucall_common.c` — guest mmio 영역 주소 조회, ucall 풀 메모리 정보 조회 (2건)
+
+나머지 32건은 `selftests/android/*.xml`, `tools/testing/kunit/`, `tools/testing/android/bin/` 등 Android 테스트 패키징이다. pKVM과 무관하다.
+
+T5 채택 3건이다.
+
+- `arch/arm64/kernel/module.c` — pKVM 모듈 심볼 import 수정
+- `arch/arm64/kernel/module-plts.c` — `CONFIG_KVM` 가드 추가
+- `arch/arm64/include/asm/hyp_image.h` + `arch/arm64/kernel/alternative.c` — `alt_cb_patch_nops`의 `kvm_nvhe` 별칭 export
+
+**판정 보류였다가 배제한 3건**
+
+| 커밋 | 배제 근거 |
+|---|---|
+| `ANDROID: arm64: Forcefully disable SME at runtime` | 본문상 KMI freeze 전 `CONFIG_ARM64_SME` 비활성화 목적. pKVM SME 작업과 무관 |
+| `ANDROID: arm64: stacktrace: Export arch_stack_walk symbol` | 본문상 vendor module의 스택 덤프 커스터마이즈용 |
+| `ANDROID: Reintroduce support for CONFIG_CMDLINE_EXTEND` | crosvm 부팅과 관련은 있으나, upstream이 `arm64: Drop support for CMDLINE_EXTEND`로 의도적으로 제거한 기능. 재투고는 결정된 사안을 되돌리는 일 |
+
+세 번째 항목은 AVF 게스트 부팅 요건이므로 머지 대상에서는 빼되 별도로 기록해 둔다.
 
 #### 교차 검증
 
@@ -427,23 +467,23 @@ upstream **v6.18** 위에 pKVM 패치를 올리는 실제 작업 절차다. 5장
 
 | 방식 | 결과 | 판정 |
 |---|---|---|
-| 경로 기반 (확정) | **713** | 기준 |
-| 접두사 확장 필터 (pKVM 키워드) | 710 | 오차 3. **일치** |
-| 접두사 좁은 필터 (`ANDROID: KVM/ARM64`) | 566 | **147 누락** |
+| 경로 기반 + 수동 검토 (확정) | **705** | 기준 |
+| 접두사 확장 필터 (pKVM 키워드) | 710 | 오차 5. **일치** |
+| 접두사 좁은 필터 (`ANDROID: KVM/ARM64`) | 566 | **139 누락** |
 | `ANDROID:` 계열 전체 | 1587 | 과다. 비대상 다수 포함 |
 
-좁은 필터가 놓치는 147개는 IOMMU/SMMU(63), 장치·메모리 주변(67), 셀프테스트·arm64 기타(22)에 몰려 있다. `iommu/arm-smmu-v3-kvm-pv`, `pviommu`, `dma-buf`, `virtio_balloon`, `swiotlb` 계열이 대표적이다. **접두사 필터만으로 대상을 확정하면 IOMMU 스택이 통째로 빠진다.**
+좁은 필터가 놓치는 139개는 IOMMU/SMMU(63), 장치·메모리 주변(67), 셀프테스트·arm64 기타(9)에 몰려 있다. `iommu/arm-smmu-v3-kvm-pv`, `pviommu`, `dma-buf`, `virtio_balloon`, `swiotlb` 계열이 대표적이다. **접두사 필터만으로 대상을 확정하면 IOMMU 스택이 통째로 빠진다.**
 
 #### `pkvm-master-6.18` 커버리지
 
-713커밋의 고유 제목 712개를 `pkvm-master-6.18`과 대조했다.
+705커밋의 고유 제목 704개를 `pkvm-master-6.18`과 대조했다.
 
 | 구분 | 수 |
 |---|---|
 | master에 있음 (일괄 추출 가능) | **356** |
-| master에 없음 (개별 cherry-pick 필요) | **356** |
+| master에 없음 (개별 cherry-pick 필요) | **348** |
 
-정확히 절반이다. master만으로는 대상의 50%밖에 확보되지 않는다.
+거의 절반이다. master만으로는 대상의 51%밖에 확보되지 않는다.
 
 ### 8.2 단계별 절차
 
@@ -483,11 +523,19 @@ AND arch/arm64/kernel arch/arm64/configs                              > t5.txt  
 cat t1.txt t2.txt t3.txt t4.txt t5.txt | sort -u > target.txt
 ```
 
-T4와 T5는 그대로 쓰면 안 된다. 원시 결과에 `gki_defconfig`·Bazel 같은 무관 항목이 대부분이므로 제목에 pKVM 키워드가 있는 것만 남긴다.
+T4와 T5는 그대로 쓰면 안 된다. 원시 286개 중 채택은 14개뿐이다. **제목이 아니라 변경 파일로 판정한다.** 제목에 `PKVM`이 있어도 `gki_defconfig`만 바꾸는 커밋이 있기 때문이다.
 
 ```bash
-git log -1 --format='%s' <sha> | grep -iE 'kvm|hyp|pkvm|pvm|protected|smmu|iommu'
+# 1차: upstream 에 없는 파일만 건드리는 커밋 배제
+NONUP='^(arch/[a-z0-9_]+/configs/|BUILD\.bazel$|.*\.fragment$|build\.config|.*\.bzl$|OWNERS)'
+git show --name-only --format='' <sha> | grep -v '^$' | grep -vE "$NONUP" | wc -l   # 0 이면 배제
+
+# 2차: 남은 코드 커밋을 실제 경로로 판정
+#   T4 채택 = tools/testing/selftests/{kvm,hyp-trace}/ 의 소스를 건드리는 것
+#   T5 채택 = arch/arm64/kernel 또는 asm 헤더를 건드리는 pKVM 커밋
 ```
+
+8.1절에 검토 결과를 정리해 두었다. 재작업 시 그 목록을 출발점으로 쓴다.
 
 #### 2단계. 실제 신규 머지 대상 선별
 
@@ -533,18 +581,18 @@ base -> pvm-core -> hypmem/hypexport
 
 #### 5단계. 추출과 적용
 
-대상 713커밋은 정확히 반으로 갈린다.
+대상 705커밋은 거의 반으로 갈린다.
 
 ```bash
 # (a) master 에 있는 356개: 선형 시리즈 일괄 추출
 git format-patch --no-numbered -o series/ \
   $(git merge-base v6.18-rc2 origin/for-android/pkvm-master-6.18)..origin/for-android/pkvm-master-6.18
 
-# (b) master 에 없는 356개: mainline 에서 개별 cherry-pick
+# (b) master 에 없는 348개: mainline 에서 개별 cherry-pick
 git cherry-pick -x <sha>
 ```
 
-(b)의 356개에 IOMMU/SMMU 스택 대부분과 최신 기능(device assignment, DMA-BUF 기반 pVM 메모리)이 들어 있다. 작업량이 (a)와 대등하다고 보고 일정을 잡아야 한다.
+(b)의 348개에 IOMMU/SMMU 스택 대부분과 최신 기능(device assignment, DMA-BUF 기반 pVM 메모리)이 들어 있다. 작업량이 (a)와 대등하다고 보고 일정을 잡아야 한다.
 
 `master`는 **v6.18-rc2** 기준이다. v6.18 정식 위에 올리면 rc2~정식 사이 변경과 충돌할 수 있으므로 재정렬을 전제로 한다.
 
@@ -566,18 +614,20 @@ ACK `android17-6.18`과 대조해 누락을 잡는다. `pkvm-master-6.18`의 394
 
 | 리스크 | 내용 | 대응 |
 |---|---|---|
-| 대상 집합 누락 | 접두사 필터만 쓰면 IOMMU/SMMU 스택 등 147개 누락 | 8.1절 경로 기반 집계 사용 |
-| 작업량 과소 추정 | master로 커버되는 건 713개 중 356개(50%)뿐 | 나머지 356개 cherry-pick을 대등한 작업량으로 계상 |
+| 대상 집합 누락 | 접두사 필터만 쓰면 IOMMU/SMMU 스택 등 139개 누락 | 8.1절 경로 기반 집계 사용 |
+| 작업량 과소 추정 | master로 커버되는 건 705개 중 356개(51%)뿐 | 나머지 348개 cherry-pick을 대등한 작업량으로 계상 |
 | 베이스 불일치 | `master-6.18`은 v6.18-rc2 기준 | 5단계에서 재정렬 전제 |
 | 중복 투고 | `FROMLIST:` 42개는 이미 LKML 게시분 | 2단계에서 분리 관리 |
 | 상류 진행과 충돌 | protected guest는 upstream 진행 중 (7.2절) | 해당 영역은 upstream 시리즈 추종, 독자 투고 지양 |
 | 소스 갱신 정지 | `pkvm-master-6.18`은 2025-11-05 이후 갱신 없음 | `pkvm-mainline-6.18`을 기준 트리로 유지 |
-| T4/T5 선별 오차 | 셀프테스트·arm64 기타는 키워드 휴리스틱으로 22개만 채택 | 원시 286개를 수동 검토해 확정 |
+| 제목 기반 선별의 오판 | 제목에 `PKVM`이 있어도 `gki_defconfig`만 바꾸는 커밋이 존재 | 제목이 아니라 **변경 파일**로 판정 |
 
 ### 8.4 미결 사항
 
-- **T4/T5 계층의 수동 검토.** 원시 집계 286개(셀프테스트 185, arm64 기타 101) 중 제목 키워드로 22개만 채택했다. 휴리스틱이므로 오차가 있다. 코드 본체 691개는 영향받지 않는다.
 - **파일별 diff 규모 미측정.** 커밋 수는 확정했으나 실제 변경 라인 수는 재지 않았다. blob까지 받아야 한다.
+- **머지 대상 외 참고 항목.** upstream 머지 대상은 아니지만 빌드·검증에 필요한 정보다.
+  - `gki_defconfig`·`microdroid_defconfig`의 pKVM 관련 옵션 (PKVM guest driver, pviommu, VFIO platform, `PTDUMP_STAGE2_DEBUGFS`). 6단계 Kconfig 설정의 근거로 쓴다.
+  - `ANDROID: Reintroduce support for CONFIG_CMDLINE_EXTEND`. AVF 게스트 부팅 요건이나 upstream이 제거한 기능이라 별도 판단이 필요하다.
 
 ---
 
