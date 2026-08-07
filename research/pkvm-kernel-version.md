@@ -13,7 +13,7 @@ ACK의 pKVM 패치는 **ACK 브랜치별 LTS 버전**을 베이스로 한다. �
 - 현재 최신 통합 브랜치: `for-android/pkvm-mainline-7.1` (Makefile v7.1.0)
 - ACK(`kernel/common`)는 pKVM 개발의 원본 트리가 아니라 **하류(downstream) 배포처**다.
 - **주의**: `pkvm-mainline-<VER>`는 순수 mainline 위 리베이스가 아니라 ACK `android-mainline` 스냅샷이다. 이름이 헷갈리기 쉽다.
-- 6.18 소스는 **`pkvm-mainline-6.18`을 기준으로 삼는다.** 머지 대상은 경로 기반 실측과 수동 검토로 **673커밋 · 38,844라인**이었고, 2026-08-07 재실측에서는 **660커밋**이다. 차이 13건은 T2·T3에 국한되며 8.1절에 정리했다. 라인 수 38,844는 673 기준이다.
+- 6.18 소스는 **`pkvm-mainline-6.18`을 기준으로 삼는다.** 머지 대상은 경로 기반 실측과 수동 검토로 **673커밋 · 38,844라인**이었고, 2026-08-07 재실측과 전수 대조로 **658커밋**으로 확정했다. 차이 15건은 T2·T3에 국한되며 개별 SHA까지 특정했다. 8.1절 참조. 라인 수 38,844는 673 기준이다.
 - **`pkvm-master-6.18`은 뼈대로 쓸 수 없다.** 순서가 mainline과 사실상 같고(Spearman 0.9997) IOMMU 트랙이 통째로 빠져 있다. 투고 순서의 기준은 `pkvm-7.1-*` 태그 스택이다. 8.2절 4단계 참조.
 - 투고 단위는 **32시리즈**(코어 24 · IOMMU 7 · 검증 1)로 짰다. 8.3절 참조.
 - **타깃 커널 버전은 6.18로 결정했다.** 근거는 5장 참조.
@@ -574,9 +574,9 @@ diff 규모를 재면서 `drivers/misc/uid_sys_stats.c`와 `TEST_MAPPING`이 상
 
 master만으로는 대상의 53%밖에 확보되지 않는다.
 
-#### 재실측: 660커밋 (2026-08-07)
+#### 재실측과 673 대조: 최종 658커밋
 
-동일 필터로 대상 집합을 다시 뽑았다. 결과는 **660커밋**이다. 673과 13커밋 차이가 난다. 계층별로 대조해 차이를 완전히 국소화했다.
+동일 필터로 대상 집합을 다시 뽑았다. 1차 결과는 660커밋이고 673과 13커밋 차이가 난다. 계층별로 대조해 차이를 국소화했다.
 
 | 계층 | 문서 673 | 재실측 660 | 차 |
 |---|---:|---:|---:|
@@ -589,16 +589,61 @@ master만으로는 대상의 53%밖에 확보되지 않는다.
 
 **T1·T4·T5는 정확히 일치한다.** 차이는 T2와 T3에만 있다.
 
-T3에서 뺀 50건은 개별 확인을 마쳤다.
+##### 673 목록 재구성
 
-- TEST_MAPPING·presubmit 등록 20건. `CtsCameraTestCases`, `VtsBootconfigTest` 등이며 upstream에 없는 파일만 건드린다.
-- pKVM 무관 Android 캐리오버 30건. `uid_sys_stats` 계열 11건, `dma-buf` heaps·namespace 계열 12건, `swiotlb` 계열 4건, `ZONE_DMA32`, `PDE_DATA` 개명 등이다.
+673의 SHA 목록은 남아 있지 않다. 대신 본 절이 명시한 배제 규칙(ACK 전용 파일, `uid_sys_stats` 계열, `ZONE_DMA32`, dma ops vendor hook, `CFI_CLANG` 개명)을 T3 원시 72건에 그대로 재적용했다. 결과는 채택 39건이다. 문서 기록 36건과 3건이 어긋난다. 이 잔차는 T3 원시 집합 자체의 차이(문서 67 대 재실측 72)에서 온다.
 
-**50건 모두 배제가 타당하다.** 따라서 T3는 22가 맞다고 본다. 673 집계가 이 중 14건을 남긴 것으로 보이나, 673의 SHA 목록이 없어 어느 14건인지는 특정하지 못했다.
+##### 쟁점 18건 (문서 채택 · 재실측 배제)
 
-T2의 +1은 반대 방향이다. 재실측 63건은 전부 pKVM IOMMU 커밋이다(`pviommu` 43, `smmu-v3` 15, `iommu-core` 5). 배제 대상이 없다. 673이 1건을 뺀 근거는 확인하지 못했다.
+전수 특정했다. 모두 변경 파일을 직접 확인했고, **18건 전부 KVM·hyp·pKVM 경로를 단 하나도 건드리지 않는다.**
 
-**현 시점의 실측값은 660이다.** 673은 T3 과다 채택으로 본다. 다만 673 목록을 확보해 SHA 단위로 대조하기 전까지는 확정이 아니다. 앞선 절의 38,844라인과 356/317 커버리지는 673 기준 수치다.
+| 커밋 | 날짜 | 제목 |
+|---|---|---|
+| `a8d66d536ea0` | 2019-10-02 | dma-buf: heaps: Allow cma heaps to be configured as a module |
+| `be65ab2ef60b` | 2021-06-03 | dma-heap: Let dma heap use dma_map_attrs to map & unmap iova |
+| `41a3d93a3987` | 2021-11-15 | add dma-buf namespace to system_heap.c & cma_heap.c |
+| `9b5f1c910c59` | 2022-02-14 | Replace "PDE_DATA" with "pde_data" |
+| `5c5a86e82d6d` | 2022-06-17 | dma/debug: fix warning of check_sync |
+| `f2e522742246` | 2024-04-15 | Export swiotlb_find_pool |
+| `4f140e67f32c` | 2024-04-15 | dma-buf: system_heap: Reject uncached SWIOTLB buffers |
+| `97c8923aa32c` | 2024-06-10 | dma-buf: align fd_flags and heap_flags with uapi |
+| `5714d24869a6` | 2024-08-13 | dma-buf: Follow function parameter type change |
+| `878e51a94ade` | 2024-08-14 | swiotlb: Follow upstream rename of swiotlb_find_pool() |
+| `d7f4b8843c1c` | 2024-08-14 | dma-buf: Use is_swiotlb_buffer() direct replacement |
+| `2fa3ec0ece12` | 2025-03-25 | dma-buf: system_heap: Convert symbol namespace to string literal |
+| `9d25842232e8` | 2025-03-25 | dma-buf: cma_heap: Convert symbol namespace to string literal |
+| `b840707bb916` | 2025-06-17 | dma-buf: heaps: system: Remove global variable |
+| `c0421704b136` | 2025-09-19 | dma-buf: Export dmabuf iteration APIs |
+| `f080c8f3d4f6` | 2025-10-21 | dma-buf: system_heap: import DMA_BUF_HEAP namespace |
+| `1b3bd0b5affd` | 2025-10-23 | dma-buf: cma_heap: import DMA_BUF_HEAP namespace |
+| `39418562e247` | 2026-03-10 | swiotlb: Add per pool encrypted property |
+
+전부 Android 범용 dma-buf 힙과 swiotlb 유지보수다. 네임스페이스 도입, 심볼 리터럴 변환, upstream 개명 추종이 대부분이다. **경로 필터 `drivers/dma-buf`·`kernel/dma`가 끌어온 오탐이며 배제가 맞다.** pKVM의 DMA-BUF 기반 pVM 메모리 기능은 `arch/arm64/kvm` 아래에 있어 T1에 잡힌다.
+
+##### 역방향 2건 (문서 배제 · 재실측 채택)
+
+문서 판단이 옳다. 재실측 집합에서 추가로 뺀다.
+
+| 커밋 | 계층 | 변경 파일 | 판정 |
+|---|---|---|---|
+| `35ec97b1af6e` treewide: rename CONFIG_CFI_CLANG to CONFIG_CFI | T3 | `*_defconfig` 3개, `debug_kinfo.c`, `virtio_dma_buf.c` | pKVM 무관. defconfig가 대부분이라 실질 ACK 전용 |
+| `592a281e889d` mm: add vendor hook to set up dma ops | T2 | `drivers/iommu/dma-iommu.c`, `include/trace/hooks/iommu.h` | 벤더 훅. pKVM 무관 |
+
+##### 결론
+
+**최종 머지 대상은 658커밋이다.** 660에서 역방향 2건을 뺀 값이다.
+
+| 구분 | 수 |
+|---|---:|
+| 1차 재실측 | 660 |
+| 역방향 2건 배제 | -2 |
+| **확정** | **658** |
+
+673과의 차이 15건은 모두 해소했다. 쟁점 18건은 배제가 맞고, 역방향 2건은 문서 판단이 맞다. 673은 T3 오탐 18건을 남기고 T3 3건을 원시 단계에서 누락한 결과로 본다.
+
+미해소로 남는 것은 T3 원시 집합의 3건 차이(문서 67 대 재실측 72)뿐이다. 673 목록이 없어 그 3건은 특정할 수 없다.
+
+앞선 절의 38,844라인과 356/317 커버리지는 673 기준 수치다. 658 기준 재집계는 하지 않았다.
 
 ### 8.2 단계별 절차
 
@@ -679,7 +724,7 @@ git log --format='%H%x09%s' --no-merges $BASE..$ML -- <8.1절 경로> \
 
 다만 태그 구간은 순수한 단일 토픽이 아니다. 태그는 그 작업 창에서 적용된 배치이지 그 토픽의 커밋 전부가 아니다. 예를 들어 `pkvm-7.1-smctrng` 구간 18커밋에는 무관한 수정이 섞여 있다. 따라서 태그는 순서 참고용으로만 쓰고, 구성원은 제목·경로 규칙으로 재산정했다.
 
-858커밋을 26개 토픽으로 나눴다. 머지 대상은 660커밋이고, `ack-only` 152커밋과 `non-pkvm` 46커밋을 뺐다. 미분류는 1건이다.
+858커밋을 26개 토픽으로 나눴다. 머지 대상은 660커밋이고, `ack-only` 152커밋과 `non-pkvm` 46커밋을 뺐다. 미분류는 1건이다. 이후 673 대조에서 역방향 2건을 더 빼 **확정은 658커밋**이다. 8.1절 참조.
 
 | 토픽 | 커밋 | 토픽 | 커밋 |
 |---|---:|---|---:|
@@ -720,18 +765,18 @@ git log --format='%H%x09%s' --no-merges $BASE..$ML -- <8.1절 경로> \
 
 #### 5단계. 추출과 적용
 
-재실측 660커밋은 이렇게 갈린다. 괄호 안은 673 기준 종전 수치다.
+확정 658커밋은 이렇게 갈린다. 괄호 안은 673 기준 종전 수치다.
 
 ```bash
 # (a) master 에 있는 368개(종전 356): 선형 시리즈 일괄 추출
 git format-patch --no-numbered -o series/ \
   $(git merge-base v6.18-rc2 origin/for-android/pkvm-master-6.18)..origin/for-android/pkvm-master-6.18
 
-# (b) master 에 없는 292개(종전 317): mainline 에서 개별 cherry-pick
+# (b) master 에 없는 290개(종전 317): mainline 에서 개별 cherry-pick
 git cherry-pick -x <sha>
 ```
 
-(b)의 292개에 IOMMU/SMMU 스택 대부분과 최신 기능(device assignment, DMA-BUF 기반 pVM 메모리)이 들어 있다. 작업량이 (a)와 대등하다고 보고 일정을 잡아야 한다.
+(b)의 290개에 IOMMU/SMMU 스택 대부분과 최신 기능(device assignment, DMA-BUF 기반 pVM 메모리)이 들어 있다. 작업량이 (a)와 대등하다고 보고 일정을 잡아야 한다.
 
 (a)를 그대로 쓰면 시간순 배치가 된다. 토픽별 투고를 하려면 8.3절 시리즈 분할안에 맞춰 재배열해야 하며, 그 비용은 위의 충돌 위험 3파일 표에 나온 그대로다.
 
@@ -783,7 +828,7 @@ ACK `android17-6.18`과 대조해 누락을 잡는다. `pkvm-master-6.18`의 394
 | 리스크 | 내용 | 대응 |
 |---|---|---|
 | 대상 집합 누락 | 접두사 필터만 쓰면 IOMMU/SMMU 스택 등 107개 누락 | 8.1절 경로 기반 집계 사용 |
-| 작업량 과소 추정 | master로 커버되는 건 660개 중 368개(56%)뿐 | 나머지 292개 cherry-pick을 대등한 작업량으로 계상 |
+| 작업량 과소 추정 | master로 커버되는 건 658개 중 368개(56%)뿐 | 나머지 290개 cherry-pick을 대등한 작업량으로 계상 |
 | 토픽 재배열 비용 | 충돌 위험 3파일에서 토픽 쌍 143쌍이 교차한다. `mem_protect.c`는 109커밋 중 95개(87%)가 위치를 바꿔야 한다 | 시간순 적용으로 먼저 빌드를 세운 뒤 토픽 재배열을 별도 공정으로 잡는다. 세 파일 동시 변경 9건은 쪼개지 않는다 |
 | 베이스 불일치 | `master-6.18`은 v6.18-rc2 기준 | 5단계에서 재정렬 전제 |
 | 중복 투고 | `FROMLIST:` 42개는 이미 LKML 게시분 | 2단계에서 분리 관리 |
@@ -795,7 +840,7 @@ ACK `android17-6.18`과 대조해 누락을 잡는다. `pkvm-master-6.18`의 394
 ### 8.5 미결 사항
 
 - **T5 원시 집합 수치 불일치.** 8.1절 T4·T5 표는 T5를 "원시 101 / ACK 전용 87 / 코드 포함 14"로 적었으나 재실측은 151 / 132 / 19다. 채택 3건은 동일해 673에는 영향이 없다. 원시 수치의 산출 기준 차이로 보이나 원인은 미확인이다.
-- **673 대 660의 잔여 13커밋.** 8.1절 재실측 표로 T2(+1)와 T3(-14)까지 국소화했으나 개별 SHA는 특정하지 못했다. 673 목록 확보가 필요하다.
+- **T3 원시 집합의 3건 차이.** 8.1절 673 대조로 쟁점 18건과 역방향 2건을 전수 특정해 대상을 658로 확정했다. 남은 것은 T3 원시 수치의 차이(문서 67 대 재실측 72)에서 오는 3건이다. 673의 SHA 목록이 없어 특정할 수 없다.
 - **`host-stage2` 45커밋의 재배치.** 파일 단위 잔여 버킷이라 그대로 시리즈가 되지 않는다. 커밋 본문을 읽고 다른 토픽으로 분산해야 한다.
 - **`pvm-core` 119커밋의 정밀 분할.** 시간순 4등분은 임시안이다. `pkvm_hyp_vm`·`pkvm_hyp_vcpu` 도입 시점을 기준으로 다시 잡아야 한다.
 - **심볼 수준 의존 검증 미완.** 토픽 의존 근거는 커밋 제목에 심볼명이 드러난 경우로 한정했다. 저장소가 `--filter=blob:none`이라 `git log -S`로 심볼 도입 시점을 전수 추적하지는 않았다.
