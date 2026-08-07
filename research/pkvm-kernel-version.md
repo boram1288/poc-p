@@ -12,7 +12,8 @@ ACK의 pKVM 패치는 **ACK 브랜치별 LTS 버전**을 베이스로 한다. �
 
 - 현재 최신 통합 브랜치: `for-android/pkvm-mainline-7.1` (Makefile v7.1.0)
 - ACK(`kernel/common`)는 pKVM 개발의 원본 트리가 아니라 **하류(downstream) 배포처**다.
-- **주의**: `pkvm-mainline-<VER>`는 순수 mainline 위 리베이스가 아니라 ACK `android-mainline` 스냅샷이다. 순수 pKVM 패치만 필요하면 `pkvm-master-<VER>`를 써야 한다. 2-4절 참조.
+- **주의**: `pkvm-mainline-<VER>`는 순수 mainline 위 리베이스가 아니라 ACK `android-mainline` 스냅샷이다. 이름이 헷갈리기 쉽다.
+- 6.18 소스는 **`pkvm-mainline-6.18`을 기준으로 삼고 `pkvm-master-6.18`은 추출 보조로 쓴다.** master는 pKVM 커밋 218개가 누락된 진부분집합이다. 2-4절과 6.1절 참조.
 - **타깃 커널 버전은 6.18로 결정했다.** 근거는 5장 참조.
 
 ---
@@ -49,7 +50,7 @@ flowchart LR
     AMAIN -->|"베이스"| ML71
     AMAIN -->|"6.18 시점 fork"| A17
     MASTER -->|"378/394 커밋 반영"| A17
-    MASTER -.->|"391/394 포함"| MAINLINE
+    MASTER -.->|"진부분집합<br/>pKVM 218커밋 누락"| MAINLINE
     MASTER -.->|"토픽 분할 투고"| UPST
     UPST -.->|"LKML 리뷰 후 머지"| LINUS
 ```
@@ -150,15 +151,41 @@ ACK 반영도 확인했다. `kernel/common`의 `android17-6.18`을 받아 대조
 
 참고로 `pkvm-mainline-7.1`과의 정규화 일치는 238개(60%)다. 나머지는 upstream 반영 과정에서 제목이 바뀌었거나 재작성된 것으로 보인다.
 
+#### master는 mainline의 진부분집합이다 (중요)
+
+pKVM 계열 커밋(`ANDROID: KVM:`, `ANDROID: BACKPORT: KVM:`, `ANDROID: ARM64:`)만 추려 양방향으로 비교했다.
+
+| 구분 | 개수 |
+|---|---|
+| `pkvm-mainline-6.18`의 pKVM 계열 | 566 |
+| `pkvm-master-6.18`의 pKVM 계열 | 348 |
+| **mainline에만 있는 것** | **218** |
+| master에만 있는 것 | **0** |
+
+**master에만 있는 커밋은 하나도 없다.** 즉 `pkvm-master-6.18`은 깨끗하지만 **불완전하다**. 2025-11-05에 갱신이 멈춘 스냅샷이라 이후 작업이 통째로 빠져 있다.
+
+빠진 218개는 특정 기능 영역에 몰려 있다.
+
+- device assignment (`Add arch function for device assignment`, `Add HVC to donate/reclaim assignable MMIO`)
+- pvIOMMU (`Add documentation for pvIOMMU UAPI`, `Add extra IOMMU idmap callbacks`)
+- DMA-BUF 기반 pVM 메모리 (`Accept DMA-BUF mappings to back pVMs`)
+- guest share/unshare 하이퍼콜의 range 확장
+- defconfig (`gki_defconfig`, `microdroid_defconfig`의 PKVM guest driver 활성화)
+
+따라서 **머지 대상 목록을 master만 보고 확정하면 안 된다.**
+
 #### 용도 구분
 
-| 목적 | 사용할 브랜치 |
-|---|---|
-| **upstream 머지 대상 패치 추출** | `pkvm-master-6.18`. 394 커밋 선형 시리즈, ACK 잡음 0 |
-| ACK/GKI 통합 환경에서의 빌드·테스트 | `pkvm-mainline-6.18` |
-| 최신 pKVM 개발 현황 추적 | `pkvm-mainline-7.1` (2026-07-31, 가장 활발) |
+| 목적 | 사용할 브랜치 | 근거 |
+|---|---|---|
+| 머지 대상 **전체 목록 확정** | `pkvm-mainline-6.18` | pKVM 계열 566개 전량 보유. master는 218개 누락 |
+| 패치 시리즈 **초안 추출** | `pkvm-master-6.18` | v6.18-rc2 위 선형 394커밋, merge 0. `git format-patch` 직행 가능 |
+| ACK/GKI 통합 환경 빌드·검증 | `pkvm-mainline-6.18` | ACK `android17-6.18`과 사실상 동일 구성 |
+| 최신 pKVM 개발 현황 추적 | `pkvm-mainline-7.1` | 2026-07-31 tip. 가장 활발 |
 
-단 `pkvm-master-<VER>` 계열은 6.17과 6.18 두 버전에만 존재하고 7.1용은 없다. 6.18의 `pkvm-master-6.18`도 2025-11-05 이후 갱신이 멈춰 있다.
+권장 순서는 이렇다. `pkvm-mainline-6.18`에서 머지 대상 목록을 확정하고, 그중 `pkvm-master-6.18`에 있는 348개는 선형 시리즈로 그대로 뽑는다. 나머지 218개는 `pkvm-mainline-6.18`에서 개별 cherry-pick 한다.
+
+`pkvm-master-<VER>` 계열은 6.17과 6.18에만 존재하고 7.1용은 없다. 이 계열이 계속 유지될지는 확인되지 않았으므로 의존도를 낮춰 두는 편이 안전하다.
 
 ### 2-5. 커밋 태그로 본 출처 구분
 
@@ -298,7 +325,7 @@ EOL 날짜는 확정된 것이 아니다. 산업계 수요와 메인테이너 �
 
 ### 5.3 결정에 따른 후속 사항
 
-- 소스 브랜치는 `for-android/pkvm-mainline-6.18` (베이스 v6.18.0)을 사용한다. 6.1절 참조.
+- 소스 브랜치는 **용도별로 나눠 쓴다**. 머지 대상 목록 확정과 검증은 `for-android/pkvm-mainline-6.18`, 패치 시리즈 초안 추출은 `for-android/pkvm-master-6.18`이다. 6.1절 참조.
 - 6.12는 대상에서 제외한다. CIP SLTS(2035년)가 필요한 요건이 새로 생기면 재검토한다.
 - 7.1은 유지보수 기간이 사실상 없어 제품 타깃에서 제외한다. 개발/리베이스 기준선으로만 참고한다.
 
@@ -308,16 +335,35 @@ EOL 날짜는 확정된 것이 아니다. 산업계 수요와 메인테이너 �
 
 ### 6.1 타깃 커널 버전별 소스 선택
 
+타깃은 5장 결정에 따라 **LTS 6.18**이다. 6.18 소스는 단일 브랜치가 아니라 **역할별로 두 개를 나눠 쓴다.**
+
+| 역할 | 사용할 브랜치 | 근거 |
+|---|---|---|
+| **① 머지 대상 목록 확정 (기준 트리)** | **`for-android/pkvm-mainline-6.18`** | pKVM 계열 커밋 566개 전량 보유. 2026-04-13까지 갱신 |
+| **② 패치 시리즈 초안 추출** | **`for-android/pkvm-master-6.18`** | v6.18-rc2 위 선형 394커밋, merge 0. `git format-patch` 직행 |
+| ③ ACK/GKI 환경 빌드·검증 | `for-android/pkvm-mainline-6.18` | ACK `android17-6.18`과 사실상 동일 구성 |
+| ④ 최신 개발 현황 대조 | `for-android/pkvm-mainline-7.1` | 2026-07-31 tip |
+
+#### 두 브랜치를 나눠 쓰는 이유
+
+**mainline이 기준인 이유**는 완전성이다. `pkvm-master-6.18`은 2025-11-05에 멈춘 스냅샷이라 pKVM 계열 566개 중 348개만 갖고 있다. **218개가 누락**되어 있으며 device assignment, pvIOMMU, DMA-BUF 기반 pVM 메모리 등 통째로 빠진 기능 영역이 있다. 반대로 master에만 있는 커밋은 0개다. 목록 확정을 master로 하면 기능이 누락된다. 상세는 2-4절이다.
+
+**master를 함께 쓰는 이유**는 추출 편의다. `pkvm-mainline-6.18`은 ACK `android-mainline` 스냅샷이라 GKI·ashmem·incfs 등 pKVM과 무관한 커밋이 대량으로 섞여 있다(v6.18 이후 3533커밋, merge 1188개). 여기서 pKVM만 골라내는 작업이 만만치 않다. `pkvm-master-6.18`은 그 선별을 이미 끝내 둔 결과물이라 348개를 그대로 뽑을 수 있다.
+
+#### 권장 절차
+
+1. `pkvm-mainline-6.18`에서 pKVM 계열 커밋 566개 목록을 뽑아 머지 대상을 확정한다.
+2. 그중 `pkvm-master-6.18`에 있는 348개는 선형 시리즈로 일괄 추출한다.
+3. 남은 218개는 `pkvm-mainline-6.18`에서 개별 cherry-pick 한다.
+4. 베이스 차이에 주의한다. master는 **v6.18-rc2** 기준이므로 v6.18 정식 위에 올릴 때 재정렬이 필요할 수 있다.
+
+#### 그 외 커널 버전 (참고)
+
 | 머지 타깃 | 사용할 브랜치 | 근거 |
 |---|---|---|
-| **LTS 6.18 (채택)** | **`for-android/pkvm-mainline-6.18`** | **v6.18.0 베이스. 5장 결정에 따른 타깃** |
-| 최신 mainline (7.1 / 7.2) | `for-android/pkvm-mainline-7.1` | 이미 v7.1.0 위에 리베이스 완료. ACK 역포팅 대비 충돌 최소 |
+| 최신 mainline (7.1 / 7.2) | `for-android/pkvm-mainline-7.1` | 2026-07-31 tip. `pkvm-master-7.1`은 없음 |
 | LTS 6.12 | `for-android16/pkvm-integration` | v6.12.0-rc2 베이스 |
 | LTS 6.6 | `pkvm-integration-6.6` | v6.6 베이스 |
-
-**패치 추출 자체는 `for-android/pkvm-master-6.18`에서 하는 편이 낫다.** 2-4절 실측대로 `pkvm-mainline-6.18`은 ACK `android-mainline` 스냅샷이라 GKI·ashmem·incfs 등 pKVM과 무관한 커밋이 대량으로 섞여 있다(v6.18 이후 3533 커밋, merge 1188개). 반면 `pkvm-master-6.18`은 v6.18-rc2 위에 pKVM 커밋 394개만 선형으로 쌓여 있고 merge가 0이라 `git format-patch`로 그대로 뽑을 수 있다. 두 브랜치의 pKVM 내용은 99% 동일하다.
-
-다만 `pkvm-master-6.18`은 2025-11-05 이후 갱신이 없고 베이스가 v6.18 정식이 아닌 **v6.18-rc2**다. 최신 수정분은 `pkvm-mainline-6.18`(2026-04-13) 또는 `pkvm-mainline-7.1`(2026-07-31)에서 따로 확인해야 한다.
 
 **ACK 브랜치(`kernel/common`)에서 직접 패치를 추출하는 것은 권장하지 않는다.** ACK에는 pKVM 외의 대량의 Android 전용 패치가 뒤섞여 있어 pKVM 패치만 분리하기 어렵고, LTS 백포트가 누적되어 mainline과의 diff가 불필요하게 커진다.
 
