@@ -16,7 +16,8 @@ ACK의 pKVM 패치는 **ACK 브랜치별 LTS 버전**을 베이스로 한다. �
 - 6.18 소스는 **`pkvm-mainline-6.18`을 기준으로 삼는다.** 머지 대상은 경로 기반 실측과 수동 검토로 **673커밋 · 38,844라인**이었고, 2026-08-07 재실측과 전수 대조로 **658커밋**으로 확정했다. 차이 15건은 T2·T3에 국한되며 개별 SHA까지 특정했다. 8.1절 참조. 라인 수 38,844는 673 기준이다.
 - **`pkvm-master-6.18`은 뼈대로 쓸 수 없다.** 순서가 mainline과 사실상 같고(Spearman 0.9997) IOMMU 트랙이 통째로 빠져 있다. 투고 순서의 기준은 `pkvm-7.1-*` 태그 스택이다. 8.2절 4단계 참조.
 - 투고 단위는 **32시리즈**(코어 24 · IOMMU 7 · 검증 1)로 짰다. 8.3절 참조.
-- **v6.18 빌드 검증을 마쳤다.** `pkvm-master-6.18`의 394커밋을 v6.18 위로 리베이스해 clang과 gcc 양쪽에서 빌드에 성공했다. 충돌은 4건뿐이었다. 동작 검증과 IOMMU 트랙은 미포함이다. 9장 참조.
+- **v6.18 빌드 검증을 마쳤다.** IOMMU 스택까지 포함한 **715커밋** 트리를 clang과 gcc 양쪽에서 빌드하는 데 성공했다. 동작 검증은 하지 않았다. 9장 참조.
+- **투고용 집합과 빌드용 집합은 다르다.** 8장의 658커밋은 투고 기준이라 `FROMLIST:`를 제외하는데, 이들은 v6.18에 없으므로 빌드에는 필수다. IOMMU 스택의 기반 파일이 여기 해당한다. 9.2절 참조.
 - **타깃 커널 버전은 6.18로 결정했다.** 근거는 5장 참조.
 
 ---
@@ -646,6 +647,17 @@ master만으로는 대상의 53%밖에 확보되지 않는다.
 
 앞선 절의 38,844라인과 356/317 커버리지는 673 기준 수치다. 658 기준 재집계는 하지 않았다.
 
+##### 빌드 검증에서 드러난 판정 오류 2건
+
+이 확정 집합을 실제로 v6.18 위에 올려 빌드한 결과, 판정 오류가 확인되었다(9.2절).
+
+| 커밋 | 본 절 판정 | 실제 |
+|---|---|---|
+| `b163851117b3` dma-buf: Expose is_dma_buf_file() | T3 배제 (pKVM 무관) | **오배제**. DMA-BUF 기반 pVM 메모리가 `arch/arm64/kvm/mmu.c`에서 이 함수를 쓴다 |
+| `6484ce851c96` iommu: Add vendor data for custom iommu fault handler | T2 채택 (IOMMU 63건 전부 pKVM 관련) | **오탐**. 벤더 폴트 핸들러용 훅이다 |
+
+**경로 기반 필터만으로는 확정할 수 없다.** 두 건 모두 경로는 pKVM 영역이지만 실제 성격은 반대였다. 확정 집합은 빌드로 교차 검증해야 한다.
+
 ### 8.2 단계별 절차
 
 #### 0단계. 작업 트리 준비
@@ -892,9 +904,11 @@ ACK `android17-6.18`과 대조해 누락을 잡는다. `pkvm-master-6.18`의 394
 - 실행일: 2026-08-07
 - 목표: upstream 투고가 아니라 **v6.18 위에서 pKVM 패치가 빌드되는지 확인**하는 것으로 범위를 좁혔다. 따라서 8장의 토픽 분류·시리즈 분할안은 이번 검증에 쓰지 않았다. 적용 순서는 시간순 그대로다.
 
-### 9.1 적용 범위와 결과
+검증은 2단계로 했다. 1단계는 `pkvm-master-6.18`의 394커밋만, 2단계는 IOMMU 트랙까지 포함한 전량이다. 양쪽 모두 clang과 gcc에서 빌드에 성공했다.
 
-`for-android/pkvm-master-6.18`의 **394커밋을 v6.18-rc2에서 v6.18로 리베이스**했다. IOMMU 트랙 162커밋은 이번 범위에서 제외했다.
+### 9.1 1단계: 코어 pKVM 394커밋
+
+`for-android/pkvm-master-6.18`의 **394커밋을 v6.18-rc2에서 v6.18로 리베이스**했다. IOMMU 트랙은 제외했다.
 
 | 항목 | clang 18.1.3 (`LLVM=1`) | gcc 13.2 (`aarch64-linux-gnu-`) |
 |---|---|---|
@@ -909,7 +923,70 @@ ACK `android17-6.18`과 대조해 누락을 잡는다. `pkvm-master-6.18`의 394
 
 pKVM 코드가 실제로 링크되었는지도 확인했다. gcc `vmlinux`에 `__kvm_nvhe_` 접두 pKVM 심볼이 92개 있다. `__pkvm_host_donate_hyp`, `__pkvm_host_share_ffa`, `__pkvm_init_vm` 등이 정상 링크되었다.
 
-### 9.2 리베이스 충돌 4건
+### 9.2 2단계: IOMMU 포함 전량 (715커밋)
+
+1단계 브랜치 위에 나머지를 cherry-pick 했다. 최종 트리는 **715커밋**이다. v6.18 + pKVM 394 + 추가 318 + 빌드 수정 3이다. 변경 규모는 232파일 · 33,950 추가 · 3,506 삭제다.
+
+| 항목 | clang 18.1.3 (`LLVM=1`) | gcc 13.2 (`aarch64-linux-gnu-`) |
+|---|---|---|
+| 종료 코드 | 0 | 0 |
+| `arch/arm64/boot/Image` | 40.5M | 47.2M |
+| `vmlinux` | 429.8M | 160.2M |
+| `kvm_nvhe.o` (EL2) | 9.2M | 2.9M |
+| 오류 | 0 | 0 |
+| 경고 | 0 | 0 |
+
+**IOMMU 스택이 실제로 빌드된다.** EL2 측 `iommu.nvhe.o`, `pviommu.nvhe.o`, `pviommu-host.nvhe.o`와 호스트 측 `arm-smmu-v3-kvm.o`, `arm-smmu-v3-kvm-pv.o`가 생성된다. `__pkvm_host_iommu_attach_dev` 등 하이퍼콜 핸들러와 `pkvm_pviommu_driver_init` initcall이 링크된다. clang `vmlinux`의 `__kvm_nvhe_` 심볼은 6,725개다.
+
+빌드에는 8.1절의 확정 집합만으로 부족하다. 다음 Kconfig를 함께 켜야 IOMMU 스택이 컴파일된다.
+
+```bash
+./scripts/config -e ARM_SMMU_V3 -e ARM_SMMU_V3_PKVM -e ARM_SMMU_V3_PKVM_PV \
+                 -e PKVM_PVIOMMU -e VFIO_PKVM_IOMMU
+```
+
+#### 투고용 집합과 빌드용 집합은 다르다 (중요)
+
+8.1절의 658커밋은 **upstream 투고 기준**이다. 빌드에는 그대로 쓸 수 없다. 이번 작업에서 확인한 차이다.
+
+| 구분 | 투고 기준 | 빌드 기준 | 근거 |
+|---|---|---|---|
+| `FROMLIST:` / `FROMGIT:` | 제외 | **필수** | LKML 게시분일 뿐 v6.18에 머지된 것이 아니다. 47건을 추가했다 |
+| `UPSTREAM:` | 제외 | 제외 | v6.18에 이미 있다 |
+| ACK 전용 헤더 | 제외 | 일부 필수 | `include/linux/android_kabi.h`가 그렇다 |
+
+특히 IOMMU 스택의 기반 파일 `arch/arm64/kvm/hyp/nvhe/iommu/iommu.c`를 만드는 커밋이 `FROMLIST:`다. 이것을 빼면 IOMMU 관련 후속 커밋이 전부 적용되지 않는다.
+
+#### 8.1절 판정의 오류 2건
+
+빌드 과정에서 대상 집합 판정의 오류가 드러났다.
+
+| 커밋 | 8.1절 판정 | 실제 | 영향 |
+|---|---|---|---|
+| `b163851117b3` ANDROID: dma-buf: Expose is_dma_buf_file() | T3 배제 (dma-buf 계열, pKVM 무관) | **pKVM 전제 조건** | DMA-BUF 기반 pVM 메모리가 `arch/arm64/kvm/mmu.c`에서 이 함수를 쓴다. 빠지면 빌드 실패 |
+| `6484ce851c96` ANDROID: iommu: Add vendor data for custom iommu fault handler | T2 채택 (IOMMU 63건 전부 pKVM 관련) | **pKVM 무관** | 벤더 폴트 핸들러용 훅이다. ACK 전용 헤더를 요구해 빌드 실패 |
+
+즉 8.1절의 T3 배제 30건에는 최소 1건의 오배제가, T2 채택 63건에는 최소 1건의 오탐이 있다. **경로 기반 필터의 한계다.** 확정 집합을 실제로 쓰기 전에 빌드로 교차 검증해야 한다.
+
+#### 빌드 수정 3건
+
+트리에 별도 커밋으로 남겼다.
+
+| 커밋 | 내용 | 투고 시 처리 |
+|---|---|---|
+| `ac1d1ef38dc3` BUILD-FIX | ACK의 `include/linux/android_kabi.h` 추가 | 이 헤더 대신 `ANDROID_KABI_RESERVE` 사용부를 제거해야 한다 |
+| `fc2aca86ce81` Revert | `iommu: Add vendor data for custom iommu fault handler` 되돌림 | 애초에 대상에서 빼야 한다 |
+| `2e948c4a015d` BUILD-FIX | `is_dma_buf_file()`에 외부 링키지 부여 | ACK 커밋이 헤더 선언만 바꾸고 정의는 `static inline` 그대로다. v6.18에서는 `static declaration follows non-static declaration` 오류가 난다 |
+
+#### 제외한 18건
+
+| 구분 | 수 | 사유 |
+|---|---:|---|
+| tracing `FROMLIST` | 8 | master의 ANDROID 판이 상위 버전이다. 중복 |
+| `pkvm_smc` 드라이버 | 4 | `drivers/misc/pkvm-smc` 독립 드라이버. 생성 커밋 순서 문제로 보류 |
+| 중복·빈 커밋 | 6 | 이미 반영되어 cherry-pick 시 빈 커밋이 되었다 |
+
+### 9.3 리베이스 충돌 4건 (1단계)
 
 394커밋 중 충돌은 4건뿐이었다. 모두 upstream v6.18이 rc2 이후 추가한 보안 강화 코드와 pKVM 패치가 같은 줄에서 겹친 경우다.
 
@@ -922,7 +999,13 @@ pKVM 코드가 실제로 링크되었는지도 확인했다. gcc `vmlinux`에 `_
 
 네 건 모두 **upstream 쪽 검사를 살리는 방향**으로 해소했다. 기능 손실은 없다.
 
-### 9.3 절차
+2단계 cherry-pick에서는 충돌이 훨씬 많았다. 주요 유형 셋이다.
+
+- upstream v6.18이 rc2 이후 추가한 보안 검사(`pfn_range_is_valid`, `check_shl_overflow`, `check_add_overflow`)와 pKVM 패치의 충돌
+- master 계열과 mainline 계열의 구현 분기. `pkvm_init_features_from_host`가 대표적이다. master는 `pvm_supported_vcpu_features()` 마스크를, mainline은 `allowed_features` 비트맵을 쓴다
+- 헤더 선언 중복. `HYP_ALLOC_MGT_HEAP_ID`가 `#define`에서 `enum`으로 바뀌는데, 구식 `#define`이 남아 있으면 열거자를 치환해 컴파일이 깨진다
+
+### 9.4 절차
 
 ```bash
 # 트리 준비
@@ -943,19 +1026,28 @@ make ARCH=arm64 LLVM=1 defconfig
 make ARCH=arm64 LLVM=1 olddefconfig
 make ARCH=arm64 LLVM=1 -j"$(nproc)"
 
+# 2단계: 나머지를 mainline 순서대로 cherry-pick
+git switch -c pkvm-6.18-full pkvm-6.18-build
+git cherry-pick -x $(cat pick-list.txt)
+
 # gcc 검증은 out-of-tree 로 분리 (사전에 make mrproper 필요)
 make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- O=../obj-gcc defconfig
 ```
 
-`android-kvm` 저장소에는 `v6.18` 태그가 없다. 릴리스 커밋을 찾아 직접 태그해야 한다.
+작업 시 주의할 점이다.
 
-`PKVM_DEBUG`를 켜면 `PKVM_STRICT_CHECKS`, `PKVM_SELFTESTS`, `PKVM_DUMP_TRACE_ON_PANIC`이 함께 켜진다.
+- `android-kvm` 저장소에는 `v6.18` 태그가 없다. 릴리스 커밋을 찾아 직접 태그해야 한다.
+- `PKVM_DEBUG`를 켜면 `PKVM_STRICT_CHECKS`, `PKVM_SELFTESTS`, `PKVM_DUMP_TRACE_ON_PANIC`이 함께 켜진다.
+- ACK 히스토리에는 **부모가 하나인데 제목이 `Merge ...`인 커밋**이 있다. `--no-merges`로 걸러지지 않으며, 그중 하나는 7만 파일을 건드린다. 제목으로도 걸러야 한다.
+- 충돌 판정에 `git diff --diff-filter=U`를 쓰면 안 된다. 파일 추가·삭제 충돌(`DU`, `AA`)을 놓친다. `git status --porcelain`의 상태 코드를 봐야 한다.
+- 같은 트리에서 `make`를 두 개 이상 돌리면 `fixdep` 오류로 빌드가 깨진다. 소스 오류로 오인하기 쉽다.
 
-### 9.4 검증되지 않은 것
+### 9.5 검증되지 않은 것
 
 - **동작 검증은 하지 않았다.** 빌드 성공까지만 확인했다. 부팅과 pVM 생성은 미검증이다.
-- **IOMMU 트랙 162커밋은 미적용이다.** `pkvm-master-6.18`에 없어 `pkvm-mainline-6.18`에서 개별 cherry-pick이 필요하며, 충돌이 훨씬 많을 것으로 본다.
-- 8장이 확정한 658커밋 전량 적용은 하지 않았다. 이번 검증은 394커밋 기준이다.
+- **`pkvm_smc` 드라이버 4건은 미적용이다.** `drivers/misc/pkvm-smc` 독립 드라이버이며 SMC 필터 기능이다. 필요하면 별도로 올려야 한다.
+- **빌드 수정 3건은 upstream 투고용이 아니다.** 9.2절 표의 "투고 시 처리"를 따라야 한다.
+- 8.1절 확정 집합(658)과 이번 빌드 집합은 다르다. 9.2절 참조.
 
 ---
 
