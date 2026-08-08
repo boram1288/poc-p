@@ -1,0 +1,75 @@
+{
+  "agents": [
+    {
+      "agent_id": "aarm64-boundary-c1e93c1b5b0025f7",
+      "agent_type": "arm64-boundary",
+      "started_at": "2026-08-07T06:14:03.086Z",
+      "parent_mode": "none",
+      "status": "completed",
+      "completed_at": "2026-08-07T06:15:03.259Z",
+      "duration_ms": 60173
+    },
+    {
+      "agent_id": "atopic-order-5f0bf1088c3904ba",
+      "agent_type": "topic-order",
+      "started_at": "2026-08-07T06:02:55.881Z",
+      "parent_mode": "none",
+      "status": "failed",
+      "completed_at": "2026-08-07T06:11:25.228Z",
+      "duration_ms": 509347,
+      "output_summary": "Marked as stale during unmatched stop reconciliation - exceeded timeout"
+    },
+    {
+      "agent_id": "adefconfig-opts-9e29042ee7d0a354",
+      "agent_type": "defconfig-opts",
+      "started_at": "2026-08-07T06:03:12.894Z",
+      "parent_mode": "none",
+      "status": "failed",
+      "completed_at": "2026-08-07T06:11:25.228Z",
+      "duration_ms": 492334,
+      "output_summary": "Marked as stale during unmatched stop reconciliation - exceeded timeout"
+    },
+    {
+      "agent_id": "a47775bf916e00abb",
+      "agent_type": "untracked-native-fork",
+      "started_at": "2026-08-07T06:03:31.683Z",
+      "parent_mode": "none",
+      "status": "completed",
+      "completed_at": "2026-08-07T06:03:31.683Z",
+      "synthetic": true,
+      "telemetry_status": "unmatched_stop",
+      "telemetry_note": "SubagentStop arrived without a matching SubagentStart; native Agent/Task start telemetry was not observed."
+    },
+    {
+      "agent_id": "a0afed54764faaeb3",
+      "agent_type": "untracked-native-fork",
+      "started_at": "2026-08-07T06:11:25.228Z",
+      "parent_mode": "none",
+      "status": "completed",
+      "completed_at": "2026-08-07T06:11:25.228Z",
+      "synthetic": true,
+      "telemetry_status": "unmatched_stop",
+      "telemetry_note": "SubagentStop arrived without a matching SubagentStart; native Agent/Task start telemetry was not observed."
+    },
+    {
+      "agent_id": "adoc-arm64-d24a9bc5a2349074",
+      "agent_type": "doc-arm64",
+      "started_at": "2026-08-07T06:15:44.021Z",
+      "parent_mode": "none",
+      "status": "completed",
+      "completed_at": "2026-08-07T06:17:50.958Z",
+      "duration_ms": 126937
+    },
+    {
+      "agent_id": "adoc-topic-62a0ba839ff59d15",
+      "agent_type": "doc-topic",
+      "started_at": "2026-08-07T06:28:56.277Z",
+      "parent_mode": "none",
+      "status": "running"
+    }
+  ],
+  "total_spawned": 6,
+  "total_completed": 5,
+  "total_failed": 3,
+  "last_updated": "2026-08-07T06:28:56.379Z"
+}
