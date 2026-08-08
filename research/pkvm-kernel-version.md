@@ -4,6 +4,7 @@
 - 목적: Android AVF가 사용하는 Android Common Kernel(ACK)의 pKVM 패치를 **upstream Linux v6.18 위에 올려 로컬에서 빌드·테스트**하기 위해, 해당 패치들의 베이스 커널 버전과 소스 브랜치 구조를 확인하고 실제 빌드 절차를 정리한다.
 - 범위: upstream 투고는 하지 않는다. **로컬 빌드/테스트만 진행한다.**
 - 조사 방법: `android.googlesource.com/kernel/common` 및 `android-kvm.googlesource.com/linux` 저장소의 브랜치/태그 목록과 각 브랜치의 `Makefile` 버전 변수 직접 확인, 그리고 실제 리베이스·cherry-pick·빌드 실행
+- **재현 절차 요약은 [`README.md`](../README.md)에 있다.** 이 문서 8~9장의 빌드·QEMU 부팅 명령을 실행 가능한 형태로 정리했다. 이 문서는 배경·근거·실측 수치를, README는 실행 순서를 담당한다.
 
 ---
 
