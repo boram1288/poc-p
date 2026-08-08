@@ -1000,6 +1000,43 @@ make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- O=../obj-gcc defconfig
 - **EL2 모듈은 컴파일까지만 확인했다.** `pkvm_smc.ko`가 생성되고 `.hyp.text` 섹션을 갖는 것은 확인했으나, 실제 적재와 SMC 필터링 동작은 미검증이다.
 - 8.1절 경로 필터 집합(658)과 이번 빌드 집합은 다르다. 9.2절 참조.
 
+### 9.6 재검증 (다른 툴체인, 실행 완료)
+
+- 실행일: 2026-08-08
+- 목적: 9.2절의 721커밋 트리(`pkvm-6.18-full`, tip `f52ea859e386`)를 **9.2절과 다른 툴체인**으로 다시 빌드해 재현성을 확인한다.
+- 방식: 소스트리 `work/pkvm-linux`는 공유하고 브랜치 전환 없이 out-of-tree(`O=`)로만 빌드했다. 산출물은 브랜치명 기반으로 분리했다(`work/pkvm-full-clang`, `work/pkvm-full-gcc`). 두 빌드를 동시에 돌렸으나 `O=`가 달라 `fixdep` 충돌은 없었다.
+
+#### 툴체인 차이
+
+| 항목 | 9.2절 검증 | 이번 재검증 |
+|---|---|---|
+| clang | 18.1.3 | **18.1.8** (`LLVM=1 CC=clang-18 LD=ld.lld-18`) |
+| gcc 크로스 | 13.2 | **9.4.0** (`aarch64-linux-gnu-gcc-9`, binutils 2.34) |
+
+#### 결과
+
+| 항목 | clang 18.1.8 (`work/pkvm-full-clang`) | gcc 9.4.0 (`work/pkvm-full-gcc`) |
+|---|---|---|
+| 종료 코드 | 0 | 0 |
+| 오류 | 0 | 0 |
+| 경고 | 0 | 0 |
+| `arch/arm64/boot/Image` | 40.5M | 49.4M |
+| `vmlinux` | 443.6M | 228.8M |
+| `kvm_nvhe.o` (EL2) | 9.3M | 5.4M |
+| `pkvm_smc.ko` | 430K | 229K |
+| `pkvm_iommu_temp.ko` | 421K | 224K |
+| `__kvm_nvhe_` 심볼 | 6,724 | 1,723 |
+
+두 빌드 모두 EL2 nvhe 오브젝트와 pKVM 벤더 모듈(`.ko`)이 생성되고, 하이퍼바이저 코드가 `vmlinux`에 링크된다. Kconfig는 9.2절 옵션 전량을 반영했다(`KVM`, `PKVM_DEBUG`, `PKVM_STACKTRACE`, `PKVM_DISABLE_STAGE2_ON_PANIC`, `ARM_SMMU_V3`, `ARM_SMMU_V3_PKVM`, `ARM_SMMU_V3_PKVM_PV`, `PKVM_PVIOMMU`, `VFIO_PKVM_IOMMU`는 `y`, `PKVM_SMC_FILTER`·`PKVM_IOMMU_TEMPLATE`는 `m`).
+
+#### 확인된 사실
+
+1. **clang 재현성 확인.** clang 18.1.8 수치는 9.2절(18.1.3)과 사실상 동일하다. `Image` 40.5M 일치, `kvm_nvhe.o` 9.2M→9.3M, `__kvm_nvhe_` 심볼 6,725→6,724로 1개 차다. 마이너 버전 차이에서 오는 미세한 값이며 빌드 성패에는 영향이 없다.
+2. **gcc 9.4.0으로도 빌드된다 (새 사실).** 사전에는 gcc 9.4.0이 v6.18에 대해 구버전이라 실패 가능성이 높다고 봤다. 그러나 컴파일러 플래그 거부나 C 표준 문제 없이 오류·경고 0으로 완전 통과했다. 가장 우려한 nvhe 하이퍼바이저 오브젝트(HYPCOPY/HYPREL 단계)와 벤더 모듈의 `kvm_nvhe.o`도 정상 빌드됐다. **이 defconfig 구성에서는 gcc 13.2가 아니어도, gcc 9.4.0으로 빌드 가능하다.**
+3. **컴파일러 간 산출물 크기 차이는 정상 범위다.** clang `vmlinux`가 gcc의 약 2배인 것은 debug_info 포함 여부와 최적화·심볼 수 차이에서 온다. gcc `__kvm_nvhe_` 심볼(1,723)이 clang(6,724)보다 적은 것도 같은 이유다. 양쪽 다 pKVM 코드가 정상 링크된 것은 확인했다.
+
+동작 검증(부팅·pVM 생성)은 여전히 하지 않았다. 9.5절 유효.
+
 ---
 
 ## 10. 참고 자료
