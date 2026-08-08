@@ -73,6 +73,24 @@ git tag v6.18-rc2 211ddde0823f1442e4ad052a2f30f050145ccada   # pkvm-master-6.18 
 소스트리는 건드리지 않고 out-of-tree(`O=`)로만 빌드한다. clang·gcc 빌드는
 `O=`가 다르므로 동시에 돌려도 `fixdep` 충돌이 없다.
 
+### 3.0 주의 — 소스트리 오염 시 defconfig 실패 (2026-08-08 재현 시 확인)
+
+out-of-tree(`O=`) 빌드라고 해도 소스트리 루트(`work/pkvm-linux`)에 이전 빌드 흔적
+(`.config`, `include/config/`, `include/generated/`)이 남아 있으면 `make ... defconfig`가
+아래처럼 **실패**한다.
+
+    *** The source tree is not clean, please run 'make ARCH=arm64 mrproper'
+
+원인: `O=`를 지정하지 않고 소스트리 루트에서 빌드를 돌린 적이 있거나, 오염된 상태로
+트리를 받은 경우다. `mrproper`는 빌드 생성물만 제거하고 git 추적 파일은 건드리지
+않는다(`.config`·`include/config/`·`include/generated/`는 `.gitignore` 대상이라 안전).
+
+```bash
+cd work/pkvm-linux
+make ARCH=arm64 mrproper    # .config·include/config·include/generated 등 제거
+git status                  # clean 확인 후 3.1로 진행
+```
+
 ### 3.1 clang-18
 
 ```bash
@@ -323,3 +341,16 @@ cd work/pkvm-pvm
 | nested virtualization (`KVM_CAP_ARM_EL2`) | 미지원 (pVM과 별개) |
 
 상세 근거와 수치는 [`research/pkvm-kernel-version.md`](research/pkvm-kernel-version.md) 9장을 참조한다.
+
+### 5.1 재현 이력 (2026-08-08)
+
+섹션 3부터 절차를 처음부터 다시 실행하면서 확인한 상태.
+
+| 절차 | 결과 | 비고 |
+|---|---|---|
+| 3.0 소스트리 클린 상태 | 문제 확인 | `.config`·`include/config` 오염으로 defconfig 실패 → `mrproper`로 해소 |
+| 3.1 clang `defconfig` | 성공 | 오염 제거 후 정상 생성 |
+| 3.1 Kconfig 활성화 (`scripts/config`) | 성공 | KVM·PKVM_DEBUG·PKVM_STACKTRACE·ARM_SMMU_V3*·PKVM_PVIOMMU·VFIO_PKVM_IOMMU·PKVM_SMC_FILTER·PKVM_IOMMU_TEMPLATE 등 11개 심볼 반영 확인 |
+| 3.1 `olddefconfig` | 성공 | 의존성 정규화 정상 |
+| 3.1 `make -j$(nproc)` (clang) | 진행 중 중단 | 재현 재개 시 이어서 실행 필요 |
+| 3.2/3.3, 4장 | 미실행 | 3.1 빌드 완료 후 순서대로 진행 예정 |
