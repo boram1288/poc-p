@@ -17,7 +17,7 @@ ACK의 pKVM 패치는 **ACK 브랜치별 LTS 버전**을 베이스로 한다. �
 - **주의**: `pkvm-mainline-<VER>`는 순수 mainline 위 리베이스가 아니라 ACK `android-mainline` 스냅샷이다. 이름이 헷갈리기 쉽다.
 - **타깃 커널 버전은 6.18로 결정했다.** 근거는 5장 참조.
 - 6.18 소스는 **`pkvm-master-6.18`을 리베이스 베이스로, `pkvm-mainline-6.18`을 대상 목록·검증 기준으로 나눠 쓴다.** pKVM 관련 커밋 규모는 경로 기반 실측으로 **약 658~673커밋**이며, 이는 규모 파악용 수치다. 8.1절 참조.
-- **v6.18 빌드 검증을 마쳤다.** IOMMU 스택과 EL2 벤더 모듈까지 포함한 **721커밋** 트리를 clang과 gcc 양쪽에서 빌드하는 데 성공했다(9장). 다른 툴체인(clang 18.1.8, gcc 9.4.0)으로도 재현했다(9.6절). **QEMU에서 protected 모드로 부팅해 EL2 pKVM 하이퍼바이저 초기화까지 관측했다(9.7절).** 단 pVM 생성·실행은 미검증이다.
+- **v6.18 빌드 검증을 마쳤다.** IOMMU 스택과 EL2 벤더 모듈까지 포함한 **721커밋** 트리를 clang과 gcc 양쪽에서 빌드하는 데 성공했다(9장). 다른 툴체인(clang 18.1.8, gcc 9.4.0)으로도 재현했다(9.6절). **QEMU에서 protected 모드로 부팅해 EL2 pKVM 하이퍼바이저 초기화까지 관측했고(9.7절), 그 위에서 protected VM(pVM)을 생성·실행하고 메모리 격리 동작까지 실증했다(9.8절).** 단 IOMMU 기반 DMA 격리(기밀성 보증)는 QEMU 환경 제약으로 미검증이다.
 - **빌드에 실제로 필요한 커밋 집합은 경로 필터 결과와 다르다.** `FROMLIST:` 커밋은 v6.18에 아직 없으므로 빌드에는 필수다(IOMMU 스택의 기반 파일이 해당). 9.2절 참조.
 
 ---
@@ -1082,8 +1082,64 @@ make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- O=../obj-gcc defconfig
 #### 검증 범위
 
 - protected 모드 부팅과 EL2 pKVM 초기화까지 관측했다.
-- **pVM(protected guest) 생성·실행은 하지 않았다.** IOMMU/장치 할당도 QEMU 환경 제약으로 미검증이다.
+- pVM(protected guest) 생성·실행은 9.8절에서 별도로 검증했다.
 - TCG 에뮬레이션이라 실제 하드웨어 동작과 완전히 동일하다고 볼 수는 없다. EL2 진입과 하이퍼바이저 초기화 경로가 정상임을 확인한 수준이다.
+
+### 9.8 pVM 생성·실행 검증 (실행 완료)
+
+- 실행일: 2026-08-08
+- 목적: 9.7절에서 하이퍼바이저 초기화까지 확인한 데 이어, 그 위에서 **protected VM(pVM)을 실제로 생성·실행**할 수 있는지 검증한다.
+- 방식: 커널 트리의 pKVM selftest(`tools/testing/selftests/kvm/arm64/pkvm.c`)를 게스트에서 실행했다.
+
+#### 사전 판단과 실측의 차이 (중요)
+
+착수 전 조사에서는 **"x86 호스트의 QEMU TCG 위에서는 pVM 실행이 불가에 가깝다"**고 예측했다. 근거는 "게스트 KVM이 그 아래 VM을 돌리려면 또 한 겹의 하드웨어 가상화가 필요한데 TCG가 이를 제공 못 한다"는 것이었다. **이 예측은 실측으로 반증됐다.**
+
+실제로는 pVM 생성·실행이 성공했다. 예측이 틀린 이유는 다음과 같다.
+
+- pKVM은 게스트 **EL2(nVHE)**에서 동작한다. QEMU TCG는 arm64 EL2를 소프트웨어로 에뮬레이트하므로(`-machine virt,virtualization=on`), 그 EL2 위에서 KVM이 정상 동작한다.
+- pVM은 별도의 "또 한 겹 하드웨어 가상화"를 요구하지 않는다. 메모리 격리는 pKVM 하이퍼바이저가 EL2 stage-2로 구현하기 때문이다. 따라서 TCG 위에서도 `KVM_RUN`이 성립한다.
+- 막힌 것은 pVM이 아니라 **nested virtualization(게스트 내 EL2, `KVM_CAP_ARM_EL2=0`)** 하나뿐이었다. 이는 pVM과 무관한 별개 기능이다.
+
+#### selftest 크로스 빌드
+
+`aarch64-linux-gnu-gcc-9`로 `pkvm`, `hello_el2`를 정적 arm64 ELF로 빌드했다. 소스트리는 수정하지 않고 out-of-tree로 처리했다.
+
+- 전체 `make`는 노후 시스템 uapi 헤더로 일부 테스트가 실패해, 대상을 `hello_el2`와 항상 빌드되는 `pkvm`(CUSTOM)으로 좁혔다.
+- 신규 정의(`KVM_CAP_ARM_EL2` 등) 누락은 `make headers_install`로 받은 헤더를 `-isystem`으로 지정해 해결했다.
+- `tools/include/linux/arm-smccc.h`가 노후해 pKVM 메모리공유·MMIO-guard FUNC_ID가 없어, `#include_next` override 헤더로 15개 매크로만 보충했다.
+
+#### 실행 결과 (kvm-arm.mode=protected)
+
+게스트 내 `/dev/kvm`이 노출되고(`c 10:232`, `KVM_GET_API_VERSION=12`), KVM cap 조회와 pVM 생성·실행이 모두 성공했다.
+
+| 항목 | 결과 |
+|---|---|
+| `/dev/kvm` 노출 | PRESENT |
+| `KVM_CAP_ARM_PROTECTED_VM` | **1** (pVM 지원) |
+| `KVM_CAP_ARM_EL2` | 0 (nested virt 미지원) |
+| `KVM_CAP_ARM_VM_IPA_SIZE` | 44 |
+| `KVM_CREATE_VM(type=0)` | OK |
+| **`KVM_CREATE_VM(type=PROTECTED, 1<<31)`** | **OK** |
+| `KVM_CREATE_VCPU` (pVM 위) | OK |
+| `hello_el2` (nested/EL2 테스트) | SKIP (`KVM_CAP_ARM_EL2` 미충족) |
+| **`pkvm` selftest** | **PASS (rc=0)** |
+
+`pkvm` selftest는 protected VM을 만들어 `KVM_RUN`으로 게스트 코드를 완주시켰다. regular pages와 THP 두 시나리오 모두 "All ok!"다. 관측된 pVM 동작:
+
+- 게스트 실행: `Guest heartbeat` → `Guest done`
+- **메모리 격리**: 호스트가 pVM의 사설 페이지에 접근하자 `Caught expected segfault`가 발생했다. pKVM이 pVM 메모리를 호스트로부터 격리함을 실증한다.
+- 메모리 share/unshare/relinquish 하이퍼콜, MMIO-guard, private page poison 처리까지 통과했다.
+- `Host VmLck`가 증가(720896 bytes)했다가 teardown 후 0으로 복귀해 메모리 pin·해제도 정상이다.
+
+#### 검증 범위와 한계
+
+- **pVM 생성·실행·메모리 격리를 기능 수준에서 실증했다.** 빌드 → 하이퍼바이저 초기화 → pVM 생성 → pVM 실행 → 메모리 격리까지 전 경로가 도달됐다.
+- 다만 dmesg에 `Failed to init iommu driver ... do not run confidential workloads: -19`, `Found 0 assignable devices`가 있다. **IOMMU 기반 기밀성(DMA 격리)은 보장되지 않는다.** QEMU virt 머신이 SMMU·할당 장치를 노출하지 않는 탓이다. 즉 이번 검증은 **기능 검증용이며, 실제 기밀 컴퓨팅 보증은 아니다.**
+- nested virtualization(`KVM_CAP_ARM_EL2=0`)은 이 환경에서 미지원이다. 이는 pVM과 별개 기능이다.
+- TCG 에뮬레이션이라 실제 하드웨어와 완전히 동일하지는 않다.
+
+참고로 nested virtualization을 QEMU TCG에서 돌리는 사례가 LKML에도 보고돼 있다(참고 자료의 nested S2 MMU realloc 테스트). 다만 매우 느리며(예: 두 vCPU 에뮬레이션에 200초 이상), `KVM_CAP_ARM_EL2`가 필요해 이번 구성과는 요건이 다르다.
 
 ---
 
@@ -1106,3 +1162,4 @@ make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- O=../obj-gcc defconfig
 - [Linux kernel version history (Wikipedia)](https://en.wikipedia.org/wiki/Linux_kernel_version_history)
 - [Linux Kernel 7.0 Reaches End of Life (9to5Linux)](https://9to5linux.com/linux-kernel-7-0-reaches-end-of-life-its-time-to-upgrade-to-linux-kernel-7-1)
 - [CIP is now supporting five SLTS kernels (Civil Infrastructure Platform)](https://cip-project.org/blog/2025/05/26/cip-is-now-supporting-five-slts-kernels)
+- [PATCH 2/2 KVM: arm64: selftests: Add a nested S2 MMU realloc test (LKML, 2026-08-04)](https://lkml.org/lkml/2026/8/4/97) — QEMU TCG에서 nested virt 셀프테스트를 돌린 사례(9.8절 참고). 매우 느리고 `KVM_CAP_ARM_EL2`를 요구한다.

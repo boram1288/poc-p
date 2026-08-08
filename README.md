@@ -151,6 +151,23 @@ TCG라 느리므로 timeout은 300초 이상을 권장한다.
 `Failed to init iommu driver -19`, `Found 0 assignable devices` 등은 QEMU virt 머신이
 SMMU·할당 장치를 노출하지 않는 데서 오는 비치명적 경고다. pKVM 코어 초기화와 무관하다.
 
+### 4.4 pVM 생성·실행 테스트
+
+커널 트리의 pKVM selftest(`tools/testing/selftests/kvm/arm64/pkvm.c`)를 게스트에서 실행해
+protected VM 생성·실행을 검증한다. selftest를 `aarch64-linux-gnu-gcc`로 정적 크로스 빌드해
+initramfs에 넣고, `kvm-arm.mode=protected`로 부팅한 게스트 안에서 실행한다. 산출물은
+`work/pkvm-pvm/`에 있다(`run-pvm.sh`, `console-pvm-protected.log`).
+
+성공 시 게스트 콘솔에서 다음을 확인한다.
+
+- `KVM_CREATE_VM(type=PROTECTED, 1<<31) -> OK`, `KVM_CREATE_VCPU -> OK`
+- pVM 실행: `Guest heartbeat` → `Guest done` → `All ok!`
+- 메모리 격리: 호스트가 pVM 사설 페이지에 접근하면 `Caught expected segfault`
+
+주의: 이 검증은 **기능 검증용**이다. IOMMU 기반 DMA 격리(기밀성 보증)는 QEMU 환경 제약으로
+동작하지 않으며(`do not run confidential workloads`), nested virtualization(`KVM_CAP_ARM_EL2`)도
+이 환경에서는 미지원이다. 상세는 조사 문서 9.8절 참조.
+
 ## 5. 검증 상태
 
 | 항목 | 상태 |
@@ -159,7 +176,9 @@ SMMU·할당 장치를 노출하지 않는 데서 오는 비치명적 경고다.
 | v6.18 + 721커밋 빌드 (gcc 9.4.0) | 성공 (오류·경고 0) |
 | QEMU protected 모드 부팅 | 성공 |
 | EL2 pKVM 하이퍼바이저 초기화 | 관측됨 |
-| pVM(protected guest) 생성·실행 | **미검증** |
-| IOMMU/장치 할당 동작 | 미검증 (QEMU 환경 제약) |
+| pVM(protected guest) 생성·실행 | 성공 (pkvm selftest PASS, 9.8절) |
+| pVM 메모리 격리 (호스트→사설페이지 차단) | 관측됨 |
+| IOMMU 기반 DMA 격리 (기밀성 보증) | 미검증 (QEMU 환경 제약) |
+| nested virtualization (`KVM_CAP_ARM_EL2`) | 미지원 (pVM과 별개) |
 
 상세 근거와 수치는 [`research/pkvm-kernel-version.md`](research/pkvm-kernel-version.md) 9장을 참조한다.
