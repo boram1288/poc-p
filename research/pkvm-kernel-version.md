@@ -16,7 +16,7 @@ ACK의 pKVM 패치는 **ACK 브랜치별 LTS 버전**을 베이스로 한다. �
 - **주의**: `pkvm-mainline-<VER>`는 순수 mainline 위 리베이스가 아니라 ACK `android-mainline` 스냅샷이다. 이름이 헷갈리기 쉽다.
 - **타깃 커널 버전은 6.18로 결정했다.** 근거는 5장 참조.
 - 6.18 소스는 **`pkvm-master-6.18`을 리베이스 베이스로, `pkvm-mainline-6.18`을 대상 목록·검증 기준으로 나눠 쓴다.** pKVM 관련 커밋 규모는 경로 기반 실측으로 **약 658~673커밋**이며, 이는 규모 파악용 수치다. 8.1절 참조.
-- **v6.18 빌드 검증을 마쳤다.** IOMMU 스택과 EL2 벤더 모듈까지 포함한 **721커밋** 트리를 clang과 gcc 양쪽에서 빌드하는 데 성공했다. 동작 검증은 하지 않았다. 9장 참조.
+- **v6.18 빌드 검증을 마쳤다.** IOMMU 스택과 EL2 벤더 모듈까지 포함한 **721커밋** 트리를 clang과 gcc 양쪽에서 빌드하는 데 성공했다(9장). 다른 툴체인(clang 18.1.8, gcc 9.4.0)으로도 재현했다(9.6절). **QEMU에서 protected 모드로 부팅해 EL2 pKVM 하이퍼바이저 초기화까지 관측했다(9.7절).** 단 pVM 생성·실행은 미검증이다.
 - **빌드에 실제로 필요한 커밋 집합은 경로 필터 결과와 다르다.** `FROMLIST:` 커밋은 v6.18에 아직 없으므로 빌드에는 필수다(IOMMU 스택의 기반 파일이 해당). 9.2절 참조.
 
 ---
@@ -995,7 +995,7 @@ make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- O=../obj-gcc defconfig
 
 ### 9.5 검증되지 않은 것
 
-- **동작 검증은 하지 않았다.** 빌드 성공까지만 확인했다. 부팅과 pVM 생성은 미검증이다.
+- **부팅과 EL2 pKVM 초기화는 이후 QEMU로 검증했다(9.7절).** 단 pVM(protected guest) 생성·실행은 여전히 미검증이다.
 - **빌드 수정 5건은 로컬 빌드용 임시 수정이다.** 9.2절 표를 참조한다.
 - **EL2 모듈은 컴파일까지만 확인했다.** `pkvm_smc.ko`가 생성되고 `.hyp.text` 섹션을 갖는 것은 확인했으나, 실제 적재와 SMC 필터링 동작은 미검증이다.
 - 8.1절 경로 필터 집합(658)과 이번 빌드 집합은 다르다. 9.2절 참조.
@@ -1035,7 +1035,54 @@ make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- O=../obj-gcc defconfig
 2. **gcc 9.4.0으로도 빌드된다 (새 사실).** 사전에는 gcc 9.4.0이 v6.18에 대해 구버전이라 실패 가능성이 높다고 봤다. 그러나 컴파일러 플래그 거부나 C 표준 문제 없이 오류·경고 0으로 완전 통과했다. 가장 우려한 nvhe 하이퍼바이저 오브젝트(HYPCOPY/HYPREL 단계)와 벤더 모듈의 `kvm_nvhe.o`도 정상 빌드됐다. **이 defconfig 구성에서는 gcc 13.2가 아니어도, gcc 9.4.0으로 빌드 가능하다.**
 3. **컴파일러 간 산출물 크기 차이는 정상 범위다.** clang `vmlinux`가 gcc의 약 2배인 것은 debug_info 포함 여부와 최적화·심볼 수 차이에서 온다. gcc `__kvm_nvhe_` 심볼(1,723)이 clang(6,724)보다 적은 것도 같은 이유다. 양쪽 다 pKVM 코드가 정상 링크된 것은 확인했다.
 
-동작 검증(부팅·pVM 생성)은 여전히 하지 않았다. 9.5절 유효.
+부팅·EL2 초기화 동작 검증은 9.7절에서 별도로 수행했다. pVM 생성·실행은 여전히 미검증이다.
+
+### 9.7 QEMU 부팅 검증 (실행 완료)
+
+- 실행일: 2026-08-08
+- 목적: 지금까지 빌드 성공까지만 확인했던 트리를 **실제로 부팅**해 EL2 pKVM 하이퍼바이저가 초기화되는지 관측한다.
+- 대상 커널: clang 18.1.8 빌드본(`work/pkvm-full-clang`)의 `arch/arm64/boot/Image`. 커널 버전 `6.18.0-00721-gf52ea859e386`.
+
+#### 환경
+
+- 호스트는 x86_64다. arm64 게스트는 KVM 가속 없이 **QEMU TCG 순수 에뮬레이션**으로 부팅했다. 느리지만 동작 관측에는 충분하다.
+- QEMU: `qemu-system-aarch64` 4.2.1.
+- 머신: `-machine virt,virtualization=on,gic-version=3 -cpu max`. `virtualization=on`이 게스트에 EL2(ARM 가상화 확장)를 노출한다. pKVM은 EL2에서 동작하므로 이 옵션이 핵심이다. QEMU 4.2 virt 머신에 이 옵션이 있음을 확인했다.
+- initramfs: `aarch64-linux-gnu-gcc`로 크로스 빌드한 정적 busybox 1.36.1 기반 최소 루트. init이 마운트·로그 출력 후 성공 표식을 찍고 poweroff 한다.
+- 커널 커맨드라인: `console=ttyAMA0 kvm-arm.mode=protected earlycon rdinit=/init`. `kvm-arm.mode=protected`로 protected pKVM 모드를 강제했다.
+- 산출물: `work/pkvm-qemu/`. 콘솔 로그는 `console-protected.log`.
+
+#### 결과: protected 모드 부팅 성공
+
+1차 protected 모드에서 유저스페이스까지 완주하고 정상 poweroff 했다(QEMU 종료 코드 0). nvhe·기본 모드 fallback은 불필요해 생략했다. 콘솔 로그에서 확인한 핵심 문구다.
+
+| 로그 | 의미 |
+|---|---|
+| `CPU: All CPU(s) started at EL2` | 게스트가 EL2에서 기동 |
+| `CPU features: detected: Protected KVM` | protected KVM 기능 감지 |
+| `kvm [1]: IPA Size Limit: 44 bits` | KVM 초기화 진행 |
+| `kvm [1]: Protected nVHE mode initialized successfully` | **pKVM 하이퍼바이저 초기화 성공** |
+| `=== PKVM_QEMU_BOOT_OK ===` | 유저스페이스 init 도달 |
+
+**`Protected nVHE mode initialized successfully`가 관측된 것이 핵심이다.** 빌드 성공을 넘어, EL2 pKVM 하이퍼바이저가 실제로 초기화됨을 처음으로 확인했다.
+
+#### 비치명적 경고 (동작에 영향 없음)
+
+부팅 로그에 다음 경고가 있으나 pKVM 초기화 이후에 나오며 초기화 성공에는 영향이 없다.
+
+- `Failed to init iommu driver ... -19`, `Found 0 assignable devices`, `Assignable devices failed to initialize in the hypervisor -22`
+
+원인은 QEMU virt 머신이 SMMU·할당 가능 장치를 노출하지 않는 데 있다. IOMMU/장치 할당 경로는 해당 하드웨어가 없어 초기화되지 않을 뿐, pKVM 코어 초기화와 무관하다.
+
+#### initramfs 패키징 이슈 1건 (커널 무관)
+
+첫 실행에서 `Failed to execute /init (error -2)` → `No working init found` 패닉이 났다. 원인은 initramfs 안에 `/bin/sh`가 없어서다(busybox 심링크가 아직 안 만들어진 chicken-and-egg). 커널·소스트리는 건드리지 않고 initramfs 복사본에 `bin/sh -> busybox` 심링크만 추가해 우회했다. **pKVM과 무관한 유저스페이스 패키징 문제다.**
+
+#### 검증 범위
+
+- protected 모드 부팅과 EL2 pKVM 초기화까지 관측했다.
+- **pVM(protected guest) 생성·실행은 하지 않았다.** IOMMU/장치 할당도 QEMU 환경 제약으로 미검증이다.
+- TCG 에뮬레이션이라 실제 하드웨어 동작과 완전히 동일하다고 볼 수는 없다. EL2 진입과 하이퍼바이저 초기화 경로가 정상임을 확인한 수준이다.
 
 ---
 
