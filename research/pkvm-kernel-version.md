@@ -1,24 +1,23 @@
-# Android Common Kernel pKVM 패치의 베이스 커널 버전 조사
+# Android Common Kernel pKVM 패치의 v6.18 로컬 빌드/테스트
 
 - 조사일: 2026-08-06
-- 목적: Android AVF가 사용하는 Android Common Kernel(ACK)의 pKVM 패치를 upstream Linux kernel에 머지하기 위해, 해당 패치들이 어떤 Linux 버전을 베이스로 하고 있는지 확인
-- 조사 방법: `android.googlesource.com/kernel/common` 및 `android-kvm.googlesource.com/linux` 저장소의 브랜치/태그 목록과 각 브랜치의 `Makefile` 버전 변수 직접 확인
+- 목적: Android AVF가 사용하는 Android Common Kernel(ACK)의 pKVM 패치를 **upstream Linux v6.18 위에 올려 로컬에서 빌드·테스트**하기 위해, 해당 패치들의 베이스 커널 버전과 소스 브랜치 구조를 확인하고 실제 빌드 절차를 정리한다.
+- 범위: upstream 투고는 하지 않는다. **로컬 빌드/테스트만 진행한다.**
+- 조사 방법: `android.googlesource.com/kernel/common` 및 `android-kvm.googlesource.com/linux` 저장소의 브랜치/태그 목록과 각 브랜치의 `Makefile` 버전 변수 직접 확인, 그리고 실제 리베이스·cherry-pick·빌드 실행
 
 ---
 
 ## 1. 결론 요약
 
-ACK의 pKVM 패치는 **ACK 브랜치별 LTS 버전**을 베이스로 한다. 그러나 upstream 머지 작업의 소스로 사용해야 할 것은 ACK가 아니라, **`android-kvm.googlesource.com/linux`의 mainline 리베이스 브랜치**다.
+ACK의 pKVM 패치는 **ACK 브랜치별 LTS 버전**을 베이스로 한다. 로컬 빌드/테스트의 소스로 사용할 것은 ACK가 아니라, **`android-kvm.googlesource.com/linux`의 pKVM 개발 브랜치**다.
 
 - 현재 최신 통합 브랜치: `for-android/pkvm-mainline-7.1` (Makefile v7.1.0)
 - ACK(`kernel/common`)는 pKVM 개발의 원본 트리가 아니라 **하류(downstream) 배포처**다.
 - **주의**: `pkvm-mainline-<VER>`는 순수 mainline 위 리베이스가 아니라 ACK `android-mainline` 스냅샷이다. 이름이 헷갈리기 쉽다.
-- 6.18 소스는 **`pkvm-mainline-6.18`을 기준으로 삼는다.** 머지 대상은 경로 기반 실측과 수동 검토로 **673커밋 · 38,844라인**이었고, 2026-08-07 재실측과 전수 대조로 **658커밋**으로 확정했다. 차이 15건은 T2·T3에 국한되며 개별 SHA까지 특정했다. 8.1절 참조. 라인 수 38,844는 673 기준이다.
-- **`pkvm-master-6.18`은 뼈대로 쓸 수 없다.** 순서가 mainline과 사실상 같고(Spearman 0.9997) IOMMU 트랙이 통째로 빠져 있다. 투고 순서의 기준은 `pkvm-7.1-*` 태그 스택이다. 8.2절 4단계 참조.
-- 투고 단위는 **32시리즈**(코어 24 · IOMMU 7 · 검증 1)로 짰다. 8.3절 참조.
-- **v6.18 빌드 검증을 마쳤다.** IOMMU 스택과 EL2 벤더 모듈까지 포함한 **721커밋** 트리를 clang과 gcc 양쪽에서 빌드하는 데 성공했다. 동작 검증은 하지 않았다. 9장 참조.
-- **투고용 집합과 빌드용 집합은 다르다.** 8장의 658커밋은 투고 기준이라 `FROMLIST:`를 제외하는데, 이들은 v6.18에 없으므로 빌드에는 필수다. IOMMU 스택의 기반 파일이 여기 해당한다. 9.2절 참조.
 - **타깃 커널 버전은 6.18로 결정했다.** 근거는 5장 참조.
+- 6.18 소스는 **`pkvm-master-6.18`을 리베이스 베이스로, `pkvm-mainline-6.18`을 대상 목록·검증 기준으로 나눠 쓴다.** pKVM 관련 커밋 규모는 경로 기반 실측으로 **약 658~673커밋**이며, 이는 규모 파악용 수치다. 8.1절 참조.
+- **v6.18 빌드 검증을 마쳤다.** IOMMU 스택과 EL2 벤더 모듈까지 포함한 **721커밋** 트리를 clang과 gcc 양쪽에서 빌드하는 데 성공했다. 동작 검증은 하지 않았다. 9장 참조.
+- **빌드에 실제로 필요한 커밋 집합은 경로 필터 결과와 다르다.** `FROMLIST:` 커밋은 v6.18에 아직 없으므로 빌드에는 필수다(IOMMU 스택의 기반 파일이 해당). 9.2절 참조.
 
 ---
 
@@ -361,9 +360,9 @@ EOL 날짜는 확정된 것이 아니다. 산업계 수요와 메인테이너 �
 3. 나머지 317개는 `pkvm-mainline-6.18`에서 개별 cherry-pick 한다.
 4. 베이스 차이에 주의한다. master는 **v6.18-rc2** 기준이므로 v6.18 정식 위에 올릴 때 재정렬이 필요할 수 있다.
 
-**master의 쓰임은 커밋 집합이지 순서가 아니다.** master는 pKVM 선별을 끝내 둔 결과물이라 추출 편의가 있다. 그러나 그 선형 순서는 mainline과 사실상 동일한 시간순이며 토픽별 재배열이 아니다. 투고 순서의 기준은 `pkvm-7.1-*` 태그 스택이다. 근거는 8.2절 4단계다.
+**master의 쓰임은 커밋 집합이지 순서가 아니다.** master는 pKVM 선별을 끝내 둔 결과물이라 추출 편의가 있다. 그러나 그 선형 순서는 mainline과 사실상 동일한 시간순이다. 로컬 빌드에서는 이 시간순을 그대로 적용 순서로 쓴다.
 
-단계별 명령과 리스크는 **8장 실행 계획**에 정리했다.
+단계별 명령과 리스크는 **8장 로컬 빌드/테스트 준비**에 정리했다.
 
 #### 그 외 커널 버전 (참고)
 
@@ -402,11 +401,11 @@ Protected guest(pVM) 지원은 **여전히 진행 중**이다.
 
 ---
 
-## 8. 6.18 머지 실행 계획
+## 8. 6.18 로컬 빌드/테스트 준비
 
-upstream **v6.18** 위에 pKVM 패치를 올리는 실제 작업 절차다. 5장 결정과 6장 소스 선택을 전제로 한다.
+upstream **v6.18** 위에 pKVM 패치를 올려 **로컬에서 빌드·테스트**하기 위한 준비 절차다. 5장 결정과 6장 소스 선택을 전제로 한다. upstream 투고는 범위에 없다.
 
-### 8.1 대상 규모 (경로 기반 확정)
+### 8.1 pKVM 커밋 규모 파악 (경로 기반)
 
 - 측정일: 2026-08-07
 - 방법: `git clone --filter=blob:none --depth=3000`으로 트리까지 받아 `v6.18..for-android/pkvm-mainline-6.18` 구간을 **파일 경로 기준**으로 집계
@@ -557,13 +556,11 @@ diff 규모를 재면서 `drivers/misc/uid_sys_stats.c`와 `TEST_MAPPING`이 상
 - `52820b3c1e83`(gen-hyprel 이동)은 rename이라 numstat이 0/0이다. pathspec에서 `arch/arm64/kvm`을 빼면 원본이 안 보여 +462로 잘못 잡힌다.
 - T3 커밋 `a1dfc257ae63`(`arch/arm64/mm/init.c` +23/-3)은 673 집합에 없다. 삭제 398이 정확히 맞아 확인된다. 이는 집계 누락이 아니라 의도적 배제다. 제목이 `ANDROID: arm64/mm: Add command line option to make ZONE_DMA32 empty`로, 3차 정제에서 배제한 `ZONE_DMA32` 옵션 건이다. 본문도 GKI 파트너의 메모리 튜닝 목적이며 pKVM과 무관하다.
 
-##### Upstream 반려 위험
+##### EL2 모듈 로딩 관련 파일 (빌드 참고)
 
 `shared/arm64` 17파일 450라인 중 11파일 406라인이 pKVM EL2 모듈 로딩에 묶여 있다. 파일은 `kernel/module.c`(269), `asm/module.h`(52), `asm/module.lds.h`(44), `asm/assembler.h`(15), `kernel/module-plts.c`(6), `asm/memory.h`(5), `arch/arm64/Makefile`(5), `mm/init.c`(4), `tools` 계열(6)이다.
 
-빌드 영향은 `CONFIG_KVM`과 `__KVM_NVHE_HYPERVISOR__` 가드로 이미 좁혀져 있다. 쟁점은 가드가 아니라 설계 방향이다. 커밋 `f92ff4fd5ae8` 본문은 해당 모듈이 프로프라이어터리이며 GPL 심볼을 쓰면 안 된다고 밝히고, `EXPORT_SYMBOL_GPL`을 `ASM_BUILD_BUG()`로 재정의한다. arm64/KVM 메인테이너 수용 가능성은 낮다고 본다(평가).
-
-나머지는 중간 위험 2파일 35라인(`vmlinux.lds.S`, `mm/fault.c`), 낮은 위험 4파일 9라인(`head.S`, `el2_setup.h`, `asm-offsets.c`, `alternative.c`)이다. 낮은 위험 4건은 단독 투고가 가능하다.
+빌드 영향은 `CONFIG_KVM`과 `__KVM_NVHE_HYPERVISOR__` 가드로 이미 좁혀져 있다. 커밋 `f92ff4fd5ae8`은 `EXPORT_SYMBOL_GPL`을 `ASM_BUILD_BUG()`로 재정의하므로 EL2 모듈 빌드 시 이 변경이 함께 적용되어야 한다.
 
 #### `pkvm-master-6.18` 커버리지
 
@@ -574,9 +571,9 @@ diff 규모를 재면서 `drivers/misc/uid_sys_stats.c`와 `TEST_MAPPING`이 상
 | master에 있음 (일괄 추출 가능) | **356** |
 | master에 없음 (개별 cherry-pick 필요) | **317** |
 
-master만으로는 대상의 53%밖에 확보되지 않는다.
+master만으로는 대상의 53%밖에 확보되지 않는다. 나머지는 `pkvm-mainline-6.18`에서 cherry-pick 한다.
 
-#### 재실측과 673 대조: 최종 658커밋
+#### 재실측과 673 대조: 규모 658커밋
 
 동일 필터로 대상 집합을 다시 뽑았다. 1차 결과는 660커밋이고 673과 13커밋 차이가 난다. 계층별로 대조해 차이를 국소화했다.
 
@@ -633,7 +630,7 @@ master만으로는 대상의 53%밖에 확보되지 않는다.
 
 ##### 결론
 
-**최종 머지 대상은 658커밋이다.** 660에서 역방향 2건을 뺀 값이다.
+**경로 기반 pKVM 커밋 집합은 658커밋이다.** 660에서 역방향 2건을 뺀 값이다. 이는 규모 파악용 수치이며, 실제 빌드에 쓰는 집합은 9장에서 별도로 다룬다.
 
 | 구분 | 수 |
 |---|---:|
@@ -645,7 +642,7 @@ master만으로는 대상의 53%밖에 확보되지 않는다.
 
 미해소로 남는 것은 T3 원시 집합의 3건 차이(문서 67 대 재실측 72)뿐이다. 673 목록이 없어 그 3건은 특정할 수 없다.
 
-앞선 절의 38,844라인과 356/317 커버리지는 673 기준 수치다. 658 기준 재집계는 하지 않았다.
+앞선 절의 38,844라인과 356/317 커버리지는 673 기준 수치다. 658 기준 재집계는 하지 않았다. 로컬 빌드/테스트 목적에서는 규모 파악으로 충분하므로 재집계는 생략한다.
 
 ##### 빌드 검증에서 드러난 판정 오류 2건
 
@@ -710,92 +707,57 @@ git show --name-only --format='' <sha> | grep -v '^$' | grep -vE "$NONUP" | wc -
 
 8.1절에 검토 결과를 정리해 두었다. 재작업 시 그 목록을 출발점으로 쓴다.
 
-#### 2단계. 실제 신규 머지 대상 선별
+#### 2단계. 접두사로 상류 반영분 구분
 
-접두사로 이미 상류에 있는 것을 걸러낸다.
+커밋 접두사로 v6.18에 이미 있는 것과 아직 없는 것을 구분한다. **로컬 빌드에서는 이 구분이 배제 기준이 아니라 적용 여부 판단용이다.**
 
-- `UPSTREAM:` / `BACKPORT:` — v6.18에 이미 존재. **제외**
-- `FROMGIT:` / `FROMLIST:` — maintainer tree 또는 LKML 게시 완료. **중복 투고 주의**, 별도 관리
-- `ANDROID:` — 순수 out-of-tree. **실제 머지 대상**
+- `UPSTREAM:` / `BACKPORT:` — v6.18에 이미 존재. **cherry-pick 시 빈 커밋이 될 수 있으니 건너뛴다**
+- `FROMGIT:` / `FROMLIST:` — maintainer tree 또는 LKML 게시분. **v6.18에는 아직 없으므로 빌드에는 필수**. 9.2절 참조
+- `ANDROID:` — 순수 out-of-tree. 빌드에 필요
 
-확정 경로 안에서 상류 반영분은 다음과 같다. 이미 8.1절 필터에서 제외되어 있으나, 별도 관리가 필요하므로 목록을 따로 뽑아 둔다.
+확정 경로 안의 접두사 분포는 다음과 같다.
 
-| 접두사 | 커밋 수 | 처리 |
+| 접두사 | 커밋 수 | 빌드 처리 |
 |---|---|---|
-| `FROMLIST:` 계열 | 42 | LKML 게시 완료. 상류 시리즈 추종 |
-| `FROMGIT:` 계열 | 7 | maintainer tree 반영분 |
-| `UPSTREAM:` | 6 | v6.18에 이미 존재 |
+| `FROMLIST:` 계열 | 42 | v6.18에 없음. 적용 필요 |
+| `FROMGIT:` 계열 | 7 | v6.18에 없음. 적용 필요 |
+| `UPSTREAM:` | 6 | v6.18에 이미 존재. 건너뜀 |
 
 ```bash
 git log --format='%H%x09%s' --no-merges $BASE..$ML -- <8.1절 경로> \
   | grep -E '\t(FROMLIST|FROMGIT|UPSTREAM|BACKPORT: FROM)' > upstreamed.txt
 ```
 
-#### 3단계. 토픽 분류 (실측 완료)
+#### 충돌 위험 3파일 (실측)
 
-6.18용 토픽 태그는 없다(`pkvm-6.18-*` 0개). 그러나 `pkvm-7.1-*` 태그 40개가 원격에 실재하며 로컬로 받아 확인했다. 38개가 완전한 선형 사슬을 이루고 `pkvm-7.1-modtracing-v1`만 별도 가지다. 스택 규모는 376커밋이다. **상류 투고용 토픽 분할의 참고 기준이 저장소에 이미 있다.**
+토픽 재배열은 하지 않지만, 시간순으로 적용해도 충돌이 몰리는 세 파일은 미리 파악해 둔다. 세 파일 모두 pKVM 커밋의 상당수가 건드린다.
 
-다만 태그 구간은 순수한 단일 토픽이 아니다. 태그는 그 작업 창에서 적용된 배치이지 그 토픽의 커밋 전부가 아니다. 예를 들어 `pkvm-7.1-smctrng` 구간 18커밋에는 무관한 수정이 섞여 있다. 따라서 태그는 순서 참고용으로만 쓰고, 구성원은 제목·경로 규칙으로 재산정했다.
+| 파일 | 커밋 |
+|---|---:|
+| `hyp/nvhe/mem_protect.c` | 109 |
+| `pkvm.c` | 104 |
+| `hyp/nvhe/hyp-main.c` | 91 |
 
-858커밋을 26개 토픽으로 나눴다. 머지 대상은 660커밋이고, `ack-only` 152커밋과 `non-pkvm` 46커밋을 뺐다. 미분류는 1건이다. 이후 673 대조에서 역방향 2건을 더 빼 **확정은 658커밋**이다. 8.1절 참조.
+세 파일의 합집합은 251커밋이다. 셋을 동시에 건드리는 커밋은 9건이며, 호스트-게스트 메모리 이전을 EL1 진입점(`pkvm.c`), HVC 디스패치(`hyp-main.c`), 소유권 판정(`mem_protect.c`) 세 곳에 동시에 심는다. 이 세 파일이 리베이스·cherry-pick 충돌의 핵심이다.
 
-| 토픽 | 커밋 | 토픽 | 커밋 |
-|---|---:|---|---:|
-| `pvm-core` | 119 | `ffa` | 35 |
-| `modules` | 81 | `hyp-alloc` | 34 |
-| `pviommu` | 73 | `mem-opt` | 30 |
-| `tracing` | 51 | `smmu-v3` | 22 |
-| `host-stage2` | 45 | `device-assign` | 22 |
-| `iommu-core` | 45 | 그 외 13토픽 | 83 |
+#### 3단계. 추출과 적용
 
-신뢰도가 낮은 두 그룹이 있다. `host-stage2` 45커밋은 기능 단위가 아니라 `nvhe/mem_protect.c`·`nvhe/setup.c`를 건드린다는 이유로 묶인 파일 단위 잔여 버킷이다. `pvm-core` 119커밋은 광역 버킷이며 오배정이 눈으로 확인된다. 둘 다 수동 재검토가 필요하다.
-
-전체 토픽별 커밋 목록은 `work/analysis/topic-classification.md` 부록 A에 있다.
-
-#### 4단계. 스택 순서 결정 (판단 변경)
-
-**`for-android/pkvm-master-6.18`은 뼈대로 쓸 수 없다.** 이전 판단을 실측으로 뒤집었다. 근거는 둘이다.
-
-첫째, master의 선형 순서는 mainline과 사실상 같다. 공통 370커밋의 Spearman 순위상관이 0.9997이고 68,265개 쌍 중 역전이 51쌍뿐이다. 토픽별로 재배열된 브랜치가 아니라 같은 시간순 이력의 더 오래된 스냅샷이다. 재배열 정보가 없다.
-
-둘째, 커버리지가 부족하다. 858커밋 중 master에 있는 것은 370개다. 없는 488개 중 362개는 master tip(2025-11-03)보다 앞선 커밋인데도 빠져 있다. IOMMU 트랙이 통째로 없다. master 로그에서 `pviommu`는 0건이고 mainline에서는 23건이다.
-
-뼈대로 삼을 것은 **`pkvm-7.1-*` 태그 스택**이다. 실제 토픽 재배열의 결과물이라 코어 트랙 순서를 준용할 수 있다.
-
-#### 충돌 위험 3파일의 순서 (실측)
-
-세 파일 모두 전체 토픽의 3분의 2 이상이 건드린다.
-
-| 파일 | 커밋 | 건드리는 토픽 | 연속 구간 | 평균 구간 길이 | 재배열 시 이동 커밋 |
-|---|---:|---:|---:|---:|---|
-| `hyp/nvhe/mem_protect.c` | 109 | 17 | 70 | 1.56 | 95 (87%) |
-| `pkvm.c` | 104 | 16 | 56 | 1.86 | 65 (63%) |
-| `hyp/nvhe/hyp-main.c` | 91 | 17 | 49 | 1.86 | 67 (74%) |
-
-세 파일의 합집합은 251커밋이다. 시간순으로 놓았을 때 서로 교차하는 토픽 쌍이 143쌍이다. **어떤 토픽 순서를 잡아도 이 세 파일은 시리즈 경계를 넘나든다.** 토픽 단위 재배열은 곧 이 세 파일에 대한 대규모 수동 충돌 해소를 뜻한다.
-
-셋을 동시에 건드리는 커밋은 9건이다. 모두 호스트-게스트 메모리 이전을 EL1 진입점(`pkvm.c`), HVC 디스패치(`hyp-main.c`), 소유권 판정(`mem_protect.c`) 세 곳에 동시에 심는다. 쪼갤 수 없는 원자 단위로 본다.
-
-#### 5단계. 추출과 적용
-
-확정 658커밋은 이렇게 갈린다. 괄호 안은 673 기준 종전 수치다.
+pKVM 커밋은 이렇게 갈린다.
 
 ```bash
-# (a) master 에 있는 368개(종전 356): 선형 시리즈 일괄 추출
+# (a) master 에 있는 368개: 선형 시리즈 일괄 추출/리베이스
 git format-patch --no-numbered -o series/ \
   $(git merge-base v6.18-rc2 origin/for-android/pkvm-master-6.18)..origin/for-android/pkvm-master-6.18
 
-# (b) master 에 없는 290개(종전 317): mainline 에서 개별 cherry-pick
+# (b) master 에 없는 290개: mainline 에서 개별 cherry-pick
 git cherry-pick -x <sha>
 ```
 
-(b)의 290개에 IOMMU/SMMU 스택 대부분과 최신 기능(device assignment, DMA-BUF 기반 pVM 메모리)이 들어 있다. 작업량이 (a)와 대등하다고 보고 일정을 잡아야 한다.
+(b)의 290개에 IOMMU/SMMU 스택 대부분과 최신 기능(device assignment, DMA-BUF 기반 pVM 메모리)이 들어 있다. 작업량이 (a)와 대등하다.
 
-(a)를 그대로 쓰면 시간순 배치가 된다. 토픽별 투고를 하려면 8.3절 시리즈 분할안에 맞춰 재배열해야 하며, 그 비용은 위의 충돌 위험 3파일 표에 나온 그대로다.
+**적용 순서는 시간순 그대로 둔다.** 로컬 빌드/테스트가 목적이므로 토픽별 재배열은 하지 않는다. `master`는 **v6.18-rc2** 기준이라 v6.18 정식 위에 올리면 rc2~정식 사이 변경과 충돌할 수 있다(9.3절 참조).
 
-`master`는 **v6.18-rc2** 기준이다. v6.18 정식 위에 올리면 rc2~정식 사이 변경과 충돌할 수 있으므로 재정렬을 전제로 한다.
-
-#### 6단계. 빌드와 동작 검증
+#### 4단계. 빌드
 
 ```bash
 make ARCH=arm64 defconfig
@@ -816,47 +778,24 @@ Kconfig만으로는 부족하다. 실제 보호 모드로 부팅하려면 커널
 
 ACK `android17-6.18`과 대조해 누락을 잡는다. `pkvm-master-6.18`의 394커밋 중 378개가 ACK에 있으므로, ACK를 정답지로 쓸 수 있다.
 
-#### 7단계. 투고 준비
+### 8.3 리스크
 
-토픽별 시리즈로 쪼개 투고한다. CC 대상은 2-2절에 정리한 세 리스트다. `linux-kernel@vger.kernel.org`, `kvmarm@lists.linux.dev`, `linux-arm-kernel@lists.infradead.org`다.
-
-### 8.3 시리즈 분할안
-
-토픽 분류와 의존 순서를 근거로 투고 단위를 짰다. 총 **32시리즈**다. 시리즈 상한은 상류 관행에 맞춰 25~30패치로 잡았다.
-
-| 트랙 | 시리즈 | 커밋 | 내용 |
-|---|---:|---:|---|
-| A 코어 pKVM | 24 (S01~S24) | 486 | pvm-core, host-stage2, hyp-alloc, modules, ffa, tracing 등 |
-| B IOMMU | 7 (S25~S31) | 162 | iommu-core, smmu-v3, pviommu, device-assign |
-| C 검증 | 1 (S32) | 12 | selftests |
-
-임계 경로는 트랙 A의 S01~S07, 168커밋이다. 이것이 들어가기 전에는 나머지가 성립하지 않는다. 트랙 B는 S05와 S18만 끝나면 트랙 A와 병렬로 투고할 수 있다.
-
-**IOMMU 트랙은 `pkvm-7.1-*` 스택에 전혀 포함되지 않는다.** 상류 투고 계획에서 별도로 다뤄야 한다.
-
-전체 시리즈 목록과 선행 관계는 `work/analysis/topic-classification.md` 7장에 있다.
-
-### 8.4 리스크
+로컬 빌드/테스트 관점의 리스크다.
 
 | 리스크 | 내용 | 대응 |
 |---|---|---|
 | 대상 집합 누락 | 접두사 필터만 쓰면 IOMMU/SMMU 스택 등 107개 누락 | 8.1절 경로 기반 집계 사용 |
 | 작업량 과소 추정 | master로 커버되는 건 658개 중 368개(56%)뿐 | 나머지 290개 cherry-pick을 대등한 작업량으로 계상 |
-| 토픽 재배열 비용 | 충돌 위험 3파일에서 토픽 쌍 143쌍이 교차한다. `mem_protect.c`는 109커밋 중 95개(87%)가 위치를 바꿔야 한다 | 시간순 적용으로 먼저 빌드를 세운 뒤 토픽 재배열을 별도 공정으로 잡는다. 세 파일 동시 변경 9건은 쪼개지 않는다 |
-| 베이스 불일치 | `master-6.18`은 v6.18-rc2 기준 | 5단계에서 재정렬 전제 |
-| 중복 투고 | `FROMLIST:` 42개는 이미 LKML 게시분 | 2단계에서 분리 관리 |
-| 상류 진행과 충돌 | protected guest는 upstream 진행 중 (7.2절) | 해당 영역은 upstream 시리즈 추종, 독자 투고 지양 |
+| 충돌 몰림 | 충돌 위험 3파일에 커밋이 몰려 있다 | 시간순 적용으로 빌드를 세운다. 세 파일 동시 변경 9건은 쪼개지 않는다 |
+| 베이스 불일치 | `master-6.18`은 v6.18-rc2 기준 | 3단계에서 rc2~정식 차이로 인한 충돌 해소 전제 |
+| `FROMLIST:` 처리 | `FROMLIST:` 42개는 v6.18에 없어 빌드에 필수 | 9.2절대로 적용. 투고 기준 집합과 혼동하지 않는다 |
 | 소스 갱신 정지 | `pkvm-master-6.18`은 2025-11-05 이후 갱신 없음 | `pkvm-mainline-6.18`을 기준 트리로 유지 |
 | 제목 기반 선별의 오판 | 제목에 `PKVM`이 있어도 `gki_defconfig`만 바꾸는 커밋이 존재 | 제목이 아니라 **변경 파일**로 판정 |
-| EL2 모듈 로딩이 전체를 막음 | `shared/arm64` 17파일 450라인 중 11파일 406라인(90%)이 pKVM EL2 모듈 로딩 하나에 묶여 있다. 프로프라이어터리 벤더 모듈을 EL2에 올리는 설계라 메인테이너 수용 가능성이 낮다 | 해당 11파일 클러스터를 별도 시리즈로 격리해 마지막에 투고. 선행 시리즈가 막히지 않게 한다 |
 
-### 8.5 미결 사항
+### 8.4 미결 사항
 
-- **T5 원시 집합 수치 불일치.** 8.1절 T4·T5 표는 T5를 "원시 101 / ACK 전용 87 / 코드 포함 14"로 적었으나 재실측은 151 / 132 / 19다. 채택 3건은 동일해 673에는 영향이 없다. 원시 수치의 산출 기준 차이로 보이나 원인은 미확인이다.
-- **T3 원시 집합의 3건 차이.** 8.1절 673 대조로 쟁점 18건과 역방향 2건을 전수 특정해 대상을 658로 확정했다. 남은 것은 T3 원시 수치의 차이(문서 67 대 재실측 72)에서 오는 3건이다. 673의 SHA 목록이 없어 특정할 수 없다.
-- **`host-stage2` 45커밋의 재배치.** 파일 단위 잔여 버킷이라 그대로 시리즈가 되지 않는다. 커밋 본문을 읽고 다른 토픽으로 분산해야 한다.
-- **`pvm-core` 119커밋의 정밀 분할.** 시간순 4등분은 임시안이다. `pkvm_hyp_vm`·`pkvm_hyp_vcpu` 도입 시점을 기준으로 다시 잡아야 한다.
-- **심볼 수준 의존 검증 미완.** 토픽 의존 근거는 커밋 제목에 심볼명이 드러난 경우로 한정했다. 저장소가 `--filter=blob:none`이라 `git log -S`로 심볼 도입 시점을 전수 추적하지는 않았다.
+- **T5 원시 집합 수치 불일치.** 8.1절 T4·T5 표는 T5를 "원시 101 / ACK 전용 87 / 코드 포함 14"로 적었으나 재실측은 151 / 132 / 19다. 채택 3건은 동일해 규모 파악에는 영향이 없다. 원시 수치의 산출 기준 차이로 보이나 원인은 미확인이다.
+- **T3 원시 집합의 3건 차이.** 8.1절 대조로 쟁점 18건과 역방향 2건을 전수 특정해 규모를 658로 정리했다. 남은 것은 T3 원시 수치의 차이(문서 67 대 재실측 72)에서 오는 3건이다. 673의 SHA 목록이 없어 특정할 수 없다.
 
 #### defconfig pKVM 옵션 (확정)
 
@@ -877,32 +816,18 @@ ACK `android17-6.18`과 대조해 누락을 잡는다. `pkvm-master-6.18`의 394
 - `ARM_PKVM_GUEST`가 select 하는 `ARCH_HAS_VIRTIO_BALLOON_HYP_OPS`의 v6.18 존재 여부
 - `PKVM_STACKTRACE` + `PKVM_DISABLE_STAGE2_ON_PANIC` 조합의 실제 빌드 성공 여부. Kconfig 파일 판독으로만 판단했고 빌드는 돌리지 않았다.
 
-#### CONFIG_CMDLINE_EXTEND 판단 (확정)
+#### CONFIG_CMDLINE_EXTEND 참고
 
-결론: 머지 대상에서 제외한다. Android 다운스트림 전용으로 유지한다.
+`CONFIG_CMDLINE_EXTEND`는 AVF 게스트 부팅(crosvm의 device-tree `bootargs` 전달)에 쓰이는 Android 다운스트림 옵션이다. upstream은 `cae118b6acc3`(Will Deacon, Linux 5.12, 2021-03)으로 arm64에서 이 항목을 의도적으로 제거했다. 따라서 v6.18 트리에는 없다.
 
-근거는 다음과 같다.
-
-| 항목 | 내용 |
-|---|---|
-| upstream 제거 | cae118b6acc3 (Will Deacon, Linux 5.12, 2021-03) |
-| 제거 사유 | 설계 불일치. 문서상 동작은 "부트로더 인자를 CONFIG_CMDLINE 뒤에 append"인데 arm64 FDT 처리는 반대로 동작. EFI stub 및 idreg override의 파싱 순서와도 어긋남. |
-| 대체안 | CMDLINE_PREPEND/APPEND 제안 (Daniel Walker, 2019): 미머지. devicetree `/chosen/bootargs-append` (2024-05 문서화만, drivers/of/fdt.c 구현 없음) |
-| 현황 (2026-08) | arch/arm64/Kconfig에 CMDLINE_EXTEND 없음. arch/arm/Kconfig(32비트 ARM)에는 남아 있음. |
-| 재도입 시도 | George Davis(2022-08), Chris Packham(2023-03) 등: 모두 미머지 |
-| Android 패치 | `ANDROID: Support CONFIG_CMDLINE_EXTEND`, Carlos Llamas (2021-09-19). 원 저자 Doug Anderson/Colin Cross. idreg-override.c까지 고쳐 Will Deacon이 지적한 순서 불일치를 해소함. 기술적으로는 upstream 요구 방향과 부합. 커밋 메시지에 AVF/microdroid/pKVM 언급 없음. |
-| pKVM 소속 | 커밋 `e5d7c84f8167`는 `Bug: 458241298` 태그를 달고 있으며, 서명자가 Keir Fraser, Fuad Tabba(pKVM 개발자)다. 채택된 T5 커밋 `8765527b3df1`, `d833601fdcb3`과 동일한 버그 ID다. 본문이 crosvm의 device-tree `bootargs` 전달을 명시해 AVF 게스트 부팅 요건이다. |
-| 필요성 | AVF/microdroid가 이 옵션을 직접 요구한다는 공개 근거 확인 불가. 관련 Buganizer 120440972는 비공개. GKI는 gki_defconfig의 CONFIG_CMDLINE에 `kvm-arm.mode=protected`를 내장하므로 벤더 device tree bootargs와 병합할 수단이 필요하다는 정황은 있으나 추론. pKVM 프로젝트 차원에서는 실제로 요구된다. |
-| 배제 사유 | **Upstream 정책 충돌**. pKVM 무관이 아니다. upstream이 `arm64: Drop support for CMDLINE_EXTEND`로 의도적으로 제거한 기능이므로 재투고는 결정된 사안을 되돌리는 것이다. 기술적 개선(idreg-override.c 순서 수정)만으로는 정책 거부를 극복하기 어렵다. |
-
-권고: 굳이 upstream에 올린다면 PREPEND/APPEND 통합 형태로 재작성해야 하며, 단순 재도입은 반려 가능성이 높다.
+로컬 빌드에서 이 옵션을 켜야 할 필요가 생기면, 해당 Android 패치(`ANDROID: Support CONFIG_CMDLINE_EXTEND`)를 함께 적용해야 한다. 다만 실제 pVM 부팅 동작 검증 단계에서만 관련되며, 커널 빌드 자체에는 영향이 없다.
 
 ---
 
 ## 9. v6.18 빌드 검증 (실행 완료)
 
 - 실행일: 2026-08-07
-- 목표: upstream 투고가 아니라 **v6.18 위에서 pKVM 패치가 빌드되는지 확인**하는 것으로 범위를 좁혔다. 따라서 8장의 토픽 분류·시리즈 분할안은 이번 검증에 쓰지 않았다. 적용 순서는 시간순 그대로다.
+- 목표: **v6.18 위에서 pKVM 패치가 빌드되는지 확인**하는 것으로 범위를 좁혔다. 적용 순서는 시간순 그대로다.
 
 검증은 2단계로 했다. 1단계는 `pkvm-master-6.18`의 394커밋만, 2단계는 IOMMU 트랙까지 포함한 전량이다. 양쪽 모두 clang과 gcc에서 빌드에 성공했다.
 
@@ -947,11 +872,11 @@ pKVM 코드가 실제로 링크되었는지도 확인했다. gcc `vmlinux`에 `_
                  -e PKVM_PVIOMMU -e VFIO_PKVM_IOMMU
 ```
 
-#### 투고용 집합과 빌드용 집합은 다르다 (중요)
+#### 경로 필터 집합과 빌드용 집합은 다르다 (중요)
 
-8.1절의 658커밋은 **upstream 투고 기준**이다. 빌드에는 그대로 쓸 수 없다. 이번 작업에서 확인한 차이다.
+8.1절의 658커밋은 **경로 기반 pKVM 커밋 집합**이며 규모 파악용이다. 빌드에는 그대로 쓸 수 없다. 이번 작업에서 확인한 차이다.
 
-| 구분 | 투고 기준 | 빌드 기준 | 근거 |
+| 구분 | 경로 필터 집합 | 빌드 기준 | 근거 |
 |---|---|---|---|
 | `FROMLIST:` / `FROMGIT:` | 제외 | **필수** | LKML 게시분일 뿐 v6.18에 머지된 것이 아니다. 47건을 추가했다 |
 | `UPSTREAM:` | 제외 | 제외 | v6.18에 이미 있다 |
@@ -981,7 +906,7 @@ pKVM 코드가 실제로 링크되었는지도 확인했다. gcc `vmlinux`에 `_
 | `Remove token from pKVM module registration path` | `drivers/misc/pkvm-smc/pkvm-smc.c` | `pkvm_load_el2_module()` 인자 수 불일치 |
 | `Automate pKVM module event registration` | `drivers/misc/pkvm-smc/pkvm/pkvm-smc.c` | 제거된 `register_hyp_event_ids()` 호출 |
 
-8.2절 5단계의 "master에 있는 것은 일괄 추출" 절차를 쓸 때는 **이 대조를 반드시 거쳐야 한다.** 재현 방법은 제목을 정규화해 양쪽 커밋을 짝지은 뒤 `git show --name-only`로 파일 집합을 비교하는 것이다.
+8.2절 3단계의 "master에 있는 것은 일괄 추출" 절차를 쓸 때는 **이 대조를 반드시 거쳐야 한다.** 재현 방법은 제목을 정규화해 양쪽 커밋을 짝지은 뒤 `git show --name-only`로 파일 집합을 비교하는 것이다.
 
 #### EL2 모듈 검증
 
@@ -989,16 +914,14 @@ pKVM 코드가 실제로 링크되었는지도 확인했다. gcc `vmlinux`에 `_
 
 `CONFIG_PKVM_SMC_FILTER=m`으로 빌드해 `.ko` 생성까지 확인했다. 모듈에 `.hyp.text`, `.hyp.bss`, `.hyp.event_ids` 섹션과 `__kvm_nvhe_filter_smc`, `__kvm_nvhe_pkvm_smc_filter_hyp_init` 심볼이 들어 있다. **EL2 모듈 적재 경로가 실제로 컴파일된다는 뜻이다.** defconfig는 이 옵션을 켜지 않으므로 명시적으로 켜야 검증된다.
 
-이 영역은 8.4절이 upstream 수용 가능성 낮음으로 분류한 EL2 모듈 클러스터에 속한다. 빌드 대상으로는 유효하나 투고 시에는 별도 취급해야 한다.
-
 #### 빌드 수정 5건
 
-트리에 별도 커밋으로 남겼다.
+트리에 별도 커밋으로 남겼다. 로컬 빌드를 세우기 위한 임시 수정이다.
 
-| 커밋 | 내용 | 투고 시 처리 |
+| 커밋 | 내용 | 비고 |
 |---|---|---|
-| `ac1d1ef38dc3` BUILD-FIX | ACK의 `include/linux/android_kabi.h` 추가 | 이 헤더 대신 `ANDROID_KABI_RESERVE` 사용부를 제거해야 한다 |
-| `fc2aca86ce81` Revert | `iommu: Add vendor data for custom iommu fault handler` 되돌림 | 애초에 대상에서 빼야 한다 |
+| `ac1d1ef38dc3` BUILD-FIX | ACK의 `include/linux/android_kabi.h` 추가 | ACK 전용 헤더. 로컬 빌드용으로 추가 |
+| `fc2aca86ce81` Revert | `iommu: Add vendor data for custom iommu fault handler` 되돌림 | pKVM 무관 커밋이라 되돌림 |
 | `2e948c4a015d` BUILD-FIX | `is_dma_buf_file()`에 외부 링키지 부여 | ACK 커밋이 헤더 선언만 바꾸고 정의는 `static inline` 그대로다. v6.18에서는 `static declaration follows non-static declaration` 오류가 난다 |
 | `c386e32488de` BUILD-FIX | `pkvm_smc`를 tokenless `pkvm_load_el2_module()`에 맞춤 | mainline판 커밋을 쓰면 불필요하다 |
 | `281c1d3f36d5` BUILD-FIX | `pkvm_smc` EL2 측의 `register_hyp_event_ids()` 호출 제거 | 위와 같다 |
@@ -1073,9 +996,9 @@ make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- O=../obj-gcc defconfig
 ### 9.5 검증되지 않은 것
 
 - **동작 검증은 하지 않았다.** 빌드 성공까지만 확인했다. 부팅과 pVM 생성은 미검증이다.
-- **빌드 수정 5건은 upstream 투고용이 아니다.** 9.2절 표의 "투고 시 처리"를 따라야 한다.
+- **빌드 수정 5건은 로컬 빌드용 임시 수정이다.** 9.2절 표를 참조한다.
 - **EL2 모듈은 컴파일까지만 확인했다.** `pkvm_smc.ko`가 생성되고 `.hyp.text` 섹션을 갖는 것은 확인했으나, 실제 적재와 SMC 필터링 동작은 미검증이다.
-- 8.1절 확정 집합(658)과 이번 빌드 집합은 다르다. 9.2절 참조.
+- 8.1절 경로 필터 집합(658)과 이번 빌드 집합은 다르다. 9.2절 참조.
 
 ---
 
