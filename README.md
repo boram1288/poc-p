@@ -138,6 +138,14 @@ make -C . O=$O ARCH=arm64 LLVM=1 CC=clang-18 LD=ld.lld-18 -j"$(nproc)"   # 실�
 `olddefconfig`는 `.config`를 읽어 새로 켠 옵션의 의존성·하위 옵션을 자동으로 채우고,
 모순되는 설정을 정리한다. `-j"$(nproc)"`의 `nproc`는 코어 수를 반환하므로 전체 코어로 병렬 빌드한다.
 
+> **주의 (2026-08-08 재현 시 확인) — 중단된 빌드 재개 시 fixdep 일시 오류:**
+> `make -j` 를 도중에 Ctrl-C 로 중단했던 산출물 트리(`O=`)에서 재빌드를 시작하면
+> `fixdep: error opening file: <경로>/*.o.d: No such file or directory` 로 실패하는
+> 경우가 있다. 중단 시점에 `.o` 는 기록됐지만 `.d`(의존성 파일)가 안 쓰인 채 남는
+> 불일치 상태 때문이다. 이때는 **한 번 더 `make` 를 재실행**하면 정상 진행된다.
+> (단일 오브젝트 `make ... <드라이버>/<file>.o` 로 상태를 되돌린 뒤 전체 빌드를
+> 다시 돌려도 된다.)
+
 ### 3.2 gcc 9.4.0
 
 ```bash
@@ -188,9 +196,22 @@ pKVM은 EL2에서 동작하므로 `-machine virt,virtualization=on`으로 게스
 `aarch64-linux-gnu-gcc`로 정적 busybox를 크로스 빌드해 최소 루트를 만든다.
 `bin/sh -> busybox` 심링크가 반드시 있어야 한다(없으면 `No working init found` 패닉).
 
+> **주의 (2026-08-08 재현 시 확인) — `bin/sh` 없이 만든 initramfs는 패닉:**
+> 이전에 만든 `initramfs.cpio.gz`에 `bin/sh` 심링크가 빠져 있고 `initramfs-fixed.cpio.gz`에
+> 들어 있었다. 실제로 `bin/sh` 없는 initramfs로 부팅하면
+> `Kernel panic - not syncing: No working init found` 가 그대로 발생한다.
+> (이때 pKVM 하이퍼바이저는 직전에 `Protected nVHE mode initialized successfully` 로
+> 정상 초기화된 상태 — 문제는 initramfs 구성에만 있다.)
+> 확인 방법:
+> ```bash
+> zcat initramfs.cpio.gz | cpio -t | grep -x 'bin/sh'   # 없으면 패닉
+> ```
+
 ### 4.2 부팅 실행
 
-준비물이 `work/pkvm-qemu/`에 있으면 `run.sh`로 실행한다.
+준비물이 `work/pkvm-qemu/`에 있으면 `run.sh`로 실행한다. **`run.sh`가 사용하는
+initramfs가 위 4.1의 `bin/sh`를 포함한 버전인지 확인한다**(현재 파일 기준으로는
+`initramfs-fixed.cpio.gz`가 정상본).
 
 ```bash
 cd work/pkvm-qemu
@@ -348,9 +369,12 @@ cd work/pkvm-pvm
 
 | 절차 | 결과 | 비고 |
 |---|---|---|
-| 3.0 소스트리 클린 상태 | 문제 확인 | `.config`·`include/config` 오염으로 defconfig 실패 → `mrproper`로 해소 |
+| 3.0 소스트리 클린 상태 | 문제 확인 | `.config`·`include/config` 오염으로 defconfig 실패 → `mrproper`로 해소 (3.0 참조) |
 | 3.1 clang `defconfig` | 성공 | 오염 제거 후 정상 생성 |
 | 3.1 Kconfig 활성화 (`scripts/config`) | 성공 | KVM·PKVM_DEBUG·PKVM_STACKTRACE·ARM_SMMU_V3*·PKVM_PVIOMMU·VFIO_PKVM_IOMMU·PKVM_SMC_FILTER·PKVM_IOMMU_TEMPLATE 등 11개 심볼 반영 확인 |
 | 3.1 `olddefconfig` | 성공 | 의존성 정규화 정상 |
-| 3.1 `make -j$(nproc)` (clang) | 진행 중 중단 | 재현 재개 시 이어서 실행 필요 |
-| 3.2/3.3, 4장 | 미실행 | 3.1 빌드 완료 후 순서대로 진행 예정 |
+| 3.1 `make -j$(nproc)` (clang) | 성공 | 중단된 트리 재개 시 `fixdep: error ... .o.d` 일시 오류 1회 → 재실행으로 해소, EXIT=0 (3.1 주의 참조) |
+| 3.2 gcc `defconfig`·Kconfig·`olddefconfig`·`make -j` | 성공 | 11개 심볼 반영 확인, EXIT=0 |
+| 3.3 산출물 확인 | 성공 | Image·vmlinux·kvm_nvhe.o·pkvm_smc.ko·pkvm_iommu_temp.ko 모두 생성. `__kvm_nvhe_` 심볼: clang 6724 / gcc 1723 |
+| 4.2/4.3 QEMU 부팅 | 성공 | `bin/sh` 있는 initramfs로 EL2 진입·Protected KVM·`Protected nVHE mode initialized successfully`·`PKVM_QEMU_BOOT_OK` 확인 (4.1 주의 참조) |
+| 4.4 pVM 생성·실행 | 성공 | `/dev/kvm` PRESENT, `KVM_CAP_ARM_PROTECTED_VM -> 1`, `KVM_CREATE_VM(type=PROTECTED)`·`KVM_CREATE_VCPU` OK, pkvm selftest `All ok!`(rc=0), `Caught expected segfault` 4회 관측. `hello_el2`는 rc=4로 SKIP(nested 미지원) |
