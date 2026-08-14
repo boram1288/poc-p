@@ -147,7 +147,7 @@ vendor module, SMMUv3/pvIOMMU, device assignment 등은 조사 당시 개발 또
 - 소스 통합과 빌드는 Phase 02에서 완료했다.
 - QEMU protected 부팅은 Phase 03에서 완료했다.
 - 단일 pVM과 CPU 접근 격리는 Phase 04에서 완료했다.
-- SMMU/IOMMU 기반 DMA 격리는 적합한 하드웨어 또는 에뮬레이션 환경이 없어 미검증이다.
+- S2MPU 기반 DMA 격리는 적합한 하드웨어 또는 에뮬레이션 환경이 없어 미검증이다.
 
 ## 10. 참고 자료
 

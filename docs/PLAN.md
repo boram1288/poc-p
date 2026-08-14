@@ -87,10 +87,14 @@ G-4는 Host CPU 매핑 경로에 대한 기능 검증이다. G-9를 완료하기
 |---|---|---|---|---|
 | E-1 기능 검증 | 커널/pVM 기능 경로 확인 | x86_64, QEMU 4.2.1 TCG, `virt,virtualization=on`, OP-TEE 없음 | 02~05, 07 | 사용 중 |
 | E-2 통합 검증 | Secure World 공존 확인 | QEMU v8, TF-A, OP-TEE, pKVM 커널 | 06 | Phase 06에서 구성 |
-| E-3 하드웨어 검증 | 장치 할당, DMA 격리, 실제 추론 | S2MPU와 assignable device를 제공하는 arm64 시스템, USB 카메라 1대, NVIDIA GPU 1대 | 08~10 | 미확보 |
+| E-3a DMA 격리 검증 | S2MPU 격리 로직 확인 | QEMU v9 이상, `virt,iommu=smmuv3`, pKVM 커널, 가상 장치 | 08, 09 | 구성 가능 |
+| E-3b 하드웨어 검증 | 장치 할당, 실장치 DMA 격리, 실제 추론 | Ampere Altra Developer Platform, NVIDIA GPU 1대, USB 카메라 1대 | 08~10 | 미확보 |
 
-E-1 결과는 E-2 또는 E-3의 결과를 대신하지 않는다. E-3는 arm64와 NVIDIA GPU를 함께 갖춰야
-하므로 확보 자체가 별도 과제다. Phase 08 착수 전에 하드웨어를 확정한다.
+E-1 결과는 E-2 또는 E-3의 결과를 대신하지 않는다. E-3a 결과도 E-3b를 대신하지 않는다.
+
+E-3는 D-9 조사 결과에 따라 두 단계로 나눴다. pKVM S2MPU 드라이버 RFC 자체가 QEMU에서
+테스트되므로, DMA 격리 로직은 하드웨어 확보를 기다리지 않고 E-3a에서 먼저 검증한다.
+근거는 [Phase 08의 하드웨어 후보 조사](phase-08/hardware-candidates.md)에 있다.
 
 ## 4. 결정 사항
 
@@ -102,9 +106,9 @@ E-1 결과는 E-2 또는 E-3의 결과를 대신하지 않는다. E-3는 arm64�
 | D-4 | 다중 pVM VMM은 Phase 05에서 최소 구현과 crosvm을 비교 후 결정 | 미결 | 동시 운용 요구에 맞춰 별도 평가 필요 |
 | D-5 | OP-TEE 검증은 E-1과 분리된 E-2 환경에서 수행 | 확정 | 현재 QEMU-only 결과와 통합 결과 혼동 방지 |
 | D-6 | pVM 이미지 검증과 신뢰 루트는 pvmfw 방식을 기준으로 평가 | 미결 | upstream pKVM에 pvmfw 항목이 없어 대체 경로 확인 필요 |
-| D-7 | 장치 직접 할당 경로는 VFIO와 pKVM pvIOMMU 조합으로 검토 | 미결 | Phase 02에서 관련 드라이버를 이미 활성화했으나 실장치 검증 전 |
+| D-7 | 장치 직접 할당 경로는 VFIO와 pKVM pvIOMMU 조합으로 검토 | 미결 | AVF는 `vfio-platform` 경로만 문서화. PCIe 할당 경로 확인 필요 |
 | D-8 | pVM 간 프레임 전달은 EL2 벤더 모듈 확장을 1안, Host 릴레이를 대조군으로 둔다 | 미결 | upstream pKVM에 guest-to-guest 메모리 프리미티브가 없음 |
-| D-9 | E-3 하드웨어 구성 확정 | 미결 | arm64와 NVIDIA GPU를 동시에 만족하는 플랫폼 조사 필요 |
+| D-9 | E-3를 E-3a(QEMU S2MPU)와 E-3b(실장치)로 분리. 실물 1순위는 Ampere Altra Developer Platform | 잠정 | Phase 08 조사. Q-1과 Q-3 해소 후 확정 |
 
 D-8의 근거는 [pVM 전달 조사](../../test-p/docs/99_pvm_dmabuf_transfer.md)다. 조사 결론은
 표준 스택만으로는 pVM 간 zero-copy 전달이 불가하고, EL2 벤더 모듈로 guest-to-guest
@@ -122,13 +126,18 @@ share/lend 하이퍼콜을 구현하는 것이 사실상 유일한 경로라는 
 | 05 | pVM 2개 동시 생성/운용 | E-1 | 미착수 | [phase-05](phase-05/README.md) |
 | 06 | OP-TEE와 pKVM 공존 | E-2 | 미착수 | [phase-06](phase-06/README.md) |
 | 07 | 동적 pVM 수명주기 관리 | E-1 | 방식 미결 | [phase-07](phase-07/README.md) |
-| 08 | 실제 장치 직접 할당과 DMA 격리 | E-3 | 환경 미확보 | [phase-08](phase-08/README.md) |
-| 09 | 프레임 버퍼 zero-copy 소유권 이전 | E-1, E-3 | 방식 미결 | [phase-09](phase-09/README.md) |
-| 10 | AI 추론 파이프라인 통합 | E-3 | 환경 미확보 | [phase-10](phase-10/README.md) |
+| 08 | 실제 장치 직접 할당과 DMA 격리 | E-3a, E-3b | 환경 미확보 | [phase-08](phase-08/README.md) |
+| 09 | 프레임 버퍼 zero-copy 소유권 이전 | E-1, E-3b | 방식 미결 | [phase-09](phase-09/README.md) |
+| 10 | AI 추론 파이프라인 통합 | E-3b | 환경 미확보 | [phase-10](phase-10/README.md) |
 | 11 | 결과 종합 및 요구사항 매핑 | - | 진행 중 | [phase-11](phase-11/README.md) |
 
-Phase 05, 06, 07은 E-1과 E-2에서 병행할 수 있다. Phase 08은 E-3 확보가 선행되어야 하며,
-Phase 09와 10은 Phase 08의 결과에 의존한다.
+Phase 05, 06, 07은 E-1과 E-2에서 병행할 수 있다. Phase 08의 1단계는 E-3a에서 하드웨어
+없이 착수할 수 있고, 2단계와 Phase 10은 E-3b 확보가 선행되어야 한다.
+
+### Phase 08의 착수 순서 변경
+
+D-9 조사 결과, Phase 08의 DMA 격리 부분은 하드웨어 확보 전에 QEMU에서 시작할 수 있다.
+Phase 05, 06, 07과 병행 가능하다. 실장치 할당만 E-3b를 기다린다.
 
 ### Phase 00. 범위와 환경 확정
 
@@ -209,15 +218,25 @@ Phase 09와 10은 Phase 08의 결과에 의존한다.
 
 ### Phase 08. 실제 장치 직접 할당과 DMA 격리
 
-1. E-3 하드웨어를 확정하고 pKVM 커널을 부팅한다.
-2. `Found N assignable devices` 로그로 할당 가능 장치를 확인한다.
-3. USB 카메라를 Camera pVM에, NVIDIA GPU를 AI pVM에 배타적으로 할당한다.
-4. Host와 다른 pVM에서 해당 장치에 접근할 수 없음을 확인한다.
-5. 장치 DMA가 소유 pVM의 메모리 범위를 벗어나지 못하는지 S2MPU 설정으로 확인한다.
-6. pVM 종료 후 장치 소유권이 회수되고 재할당 가능한지 확인한다.
+1단계는 E-3a에서 하드웨어 없이 수행한다.
+
+1. QEMU v9 이상을 `virt,iommu=smmuv3`로 구성해 pKVM 커널을 부팅한다.
+2. `Found N assignable devices`에서 N이 0이 아님을 확인한다.
+3. 가상 장치를 pVM에 할당하고 DMA 범위 위반 차단을 확인한다.
+4. pVM에 PCIe 장치를 할당하는 경로를 조사해 D-7에 반영한다.
+
+2단계는 E-3b 확보 후 수행한다.
+
+5. E-3b 하드웨어에서 pKVM 커널을 protected 모드로 부팅한다.
+6. USB 카메라를 Camera pVM에, NVIDIA GPU를 AI pVM에 배타적으로 할당한다.
+7. Host와 다른 pVM에서 해당 장치에 접근할 수 없음을 확인한다.
+8. 실제 장치 DMA가 소유 pVM의 메모리 범위를 벗어나지 못하는지 확인한다.
+9. pVM 종료 후 장치 소유권이 회수되고 재할당 가능한지 확인한다.
 
 완료 조건: 장치 할당 성공 로그, Host 접근 차단 결과, DMA 범위 위반 차단 결과, 회수 후
-재할당 성공이 모두 있어야 한다.
+재할당 성공이 모두 있어야 한다. E-3a 결과와 E-3b 결과를 구분해 기록한다.
+
+하드웨어 후보 비교와 제약은 [하드웨어 후보 조사](phase-08/hardware-candidates.md)에 있다.
 
 ### Phase 09. 프레임 버퍼 zero-copy 소유권 이전
 
@@ -279,8 +298,10 @@ Phase 09와 10은 Phase 08의 결과에 의존한다.
 | 경로 기반 패치 필터 오판 | 필수 의존성 누락 또는 무관 패치 포함 | 실제 빌드와 파일 단위 검토로 교차 검증 |
 | master/mainline 구현 차이 | 같은 제목의 커밋도 변경 파일이 달라 빌드 실패 | 제목뿐 아니라 변경 파일 집합 비교 |
 | TCG와 실제 하드웨어 차이 | 기능 성공을 제품 보안 보증으로 오해 | 환경 프로필과 검증 수준을 결과마다 표시 |
-| S2MPU 부재 | DMA 기밀성 검증 불가 | E-3 환경 확보 전 미검증으로 유지 |
-| E-3 하드웨어 확보 실패 | Phase 08, 09, 10 전체 중단 | D-9를 Phase 06과 병행해 조기 확정, 대체 플랫폼 후보 유지 |
+| 실물 S2MPU 부재 | 실장치 DMA 기밀성 검증 불가 | E-3a로 로직을 먼저 확인하고, 실장치 판정은 E-3b 확보 전까지 미검증으로 유지 |
+| E-3b 하드웨어 확보 실패 | Phase 08 2단계와 Phase 10 중단 | E-3a로 DMA 격리를 먼저 확보. H-2를 대체 후보로 유지 |
+| pKVM에 PCIe 장치 할당 경로 부재 | discrete GPU를 pVM에 할당 불가 | Q-2를 E-3a에서 선행 조사. 없으면 EL2 확장 또는 통합 GPU 후보로 전환 |
+| pKVM DMA 격리가 upstream 미머지 | 개발 브랜치 갱신 시 결과 재현 불가 | 사용한 커밋 SHA를 결과 문서에 고정 기록 |
 | pVM 간 zero-copy 프리미티브 부재 | Phase 09에서 EL2 확장 개발 필요, 일정과 난이도 급증 | Host 릴레이 대조군을 먼저 확보해 파이프라인을 성립시킨 뒤 zero-copy로 대체 |
 | pVM 내부 GPU 드라이버 동작 불확실 | Phase 10 지연 | Phase 08에서 장치 할당 직후 최소 드라이버 기동을 먼저 확인 |
 | upstream pKVM의 pvmfw 미구현 | Phase 07의 이미지 검증 근거 부족 | 대체 검증 방식을 D-6에서 함께 평가 |
