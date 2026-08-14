@@ -1,9 +1,18 @@
 # Phase 04: 단일 pVM과 메모리 격리
 
 - 상태: 완료
+- 목적: 단일 protected VM을 실행하고 Host CPU의 private page 접근 차단을 확인한다.
+- 환경: E-1
+- 관련 목표: G-3, G-4
+- 관련 결정: D-3
 - 실행 도구: `work/src/tools/pvm/run-pvm.sh`
 - selftest 소스: `work/src/pkvm-linux/tools/testing/selftests/kvm/arm64/pkvm.c`
 - 실행 산출물: `work/build/pkvm-pvm/`
+
+## 선행 조건
+
+- Phase 03의 protected 부팅 성공
+- 커널 UAPI 헤더와 정적 arm64 크로스 툴체인
 
 ## 목표
 
@@ -53,13 +62,14 @@ work/src/tools/pvm/run-pvm.sh protected
 - share, unshare, relinquish, MMIO guard와 private page poison 경로가 통과했다.
 - teardown 뒤 Host의 locked memory가 0으로 돌아왔다.
 
-## 해석과 한계
+## 한계
 
 이 결과는 Host CPU의 매핑을 통한 private page 접근 차단을 기능 수준에서 실증한다. QEMU가
-SMMU와 assignable device를 제공하지 않으므로 DMA master의 접근 차단은 검증하지 않았다.
+S2MPU와 assignable device를 제공하지 않으므로 DMA master의 접근 차단은 검증하지 않았다.
+DMA 격리는 Phase 08에서 판정한다.
 
 `hello_el2`가 `KVM_CAP_ARM_EL2=0`으로 skip된 것은 nested virtualization 미지원 결과이며,
-pVM 생성·실행 성공과는 별개다.
+pVM 생성/실행 성공과는 별개다.
 
-이 Phase에서는 단일 selftest 흐름만 검증했다. 독립된 pVM 2개의 동시 운용은 Phase 05에서
-별도로 수행한다.
+이 Phase에서는 단일 selftest 흐름만 검증했다. 독립된 pVM 2개의 동시 운용은 Phase 05에서,
+Host 요청 기반의 동적 생성과 종료는 Phase 07에서 별도로 수행한다.
