@@ -73,7 +73,7 @@ DMA 격리의 완료 여부는 USB 카메라, NVIDIA GPU 및 S2MPU를 갖춘 하
 ```text
 work/
 ├── src/
-│   ├── pkvm-linux/       Linux v6.18 + pKVM 패치 소스 트리
+│   ├── pkvm-linux/       Linux v6.18 + pKVM 패치 소스 트리 (submodule)
 │   └── tools/
 │       ├── analysis/     패치 집합 분석 도구
 │       ├── qemu/         protected 부팅 실행 도구
@@ -88,6 +88,15 @@ work/
 
 Phase 05 이후의 도구와 산출물은 각 Phase 문서에 명시한 경로에 추가한다.
 
-`work/src/tools`의 프로젝트 도구는 Git으로 관리한다. 외부 커널 소스와 빌드 산출물은
-용량이 크거나 재생성 가능하므로 Git에서 제외한다. 모든 명령은 별도 언급이 없으면 저장소
-루트에서 실행한다.
+`work/src/tools`의 프로젝트 도구는 Git으로 관리한다. 커널 소스 트리는 submodule로 두어
+커밋 SHA만 기록한다. 빌드 산출물은 재생성 가능하므로 Git에서 제외한다. 모든 명령은 별도
+언급이 없으면 저장소 루트에서 실행한다.
+
+저장소를 처음 받을 때는 submodule을 partial clone으로 초기화한다. 커널 트리가 5.6GB를
+넘는다.
+
+```bash
+git clone git@github.com:boram1288/poc-p.git
+cd poc-p
+git submodule update --init --filter=blob:none work/src/pkvm-linux
+```

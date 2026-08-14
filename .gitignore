@@ -5,6 +5,7 @@ work/src/*
 !work/src/README.md
 !work/src/tools/
 !work/src/tools/**
+!work/src/pkvm-linux
 !work/build/
 work/build/*
 !work/build/README.md

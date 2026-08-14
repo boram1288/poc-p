@@ -8,7 +8,9 @@ work/
 └── build/  빌드 결과, initramfs, 분석 결과와 실행 로그
 ```
 
-- `src/pkvm-linux/`처럼 외부에서 가져온 대용량 저장소는 Git에서 제외한다.
+- `src/pkvm-linux/`는 Git submodule이다. 커밋 SHA만 상위 저장소에 기록한다.
 - `src/tools/`의 프로젝트 도구는 Git으로 관리한다.
 - `build/`의 생성물은 README를 제외하고 Git에서 관리하지 않는다.
 - 문서의 명령은 저장소 루트를 현재 디렉터리로 가정한다.
+
+submodule 초기화와 갱신 절차는 [source layout](src/README.md)을 따른다.

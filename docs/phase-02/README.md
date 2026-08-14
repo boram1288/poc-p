@@ -22,6 +22,21 @@ Phase 08의 DMA 격리 검증을 위한 사전 준비다.
 
 ## 소스 준비
 
+검증 트리는 submodule로 관리한다. 재현할 때는 clone이 아니라 submodule 초기화로 받는다.
+
+```bash
+git submodule update --init --filter=blob:none work/src/pkvm-linux
+```
+
+| 항목 | 값 |
+|---|---|
+| URL | `https://github.com/boram1288/pkvm-linux.git` |
+| 브랜치 | `pkvm-6.18-full` |
+| 검증 커밋 | `281fa709853a39c7db7ef60cce02e41a2869fec9` |
+
+최초 구성은 다음 명령으로 했다. 재현에는 위 submodule 초기화를 쓰고, 아래는 이력 기록으로
+남긴다.
+
 ```bash
 git clone --filter=blob:none --single-branch \
     -b for-android/pkvm-mainline-6.18 \

@@ -1,0 +1,4 @@
+[submodule "work/src/pkvm-linux"]
+	path = work/src/pkvm-linux
+	url = https://github.com/boram1288/pkvm-linux.git
+	branch = pkvm-6.18-full
