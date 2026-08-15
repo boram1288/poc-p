@@ -1,9 +1,12 @@
 # pKVM Protected VM PoC
 
-이 저장소는 Linux v6.18에 pKVM 패치를 적용하고, QEMU와 실제 하드웨어에서
-protected VM(pVM) 기반의 신뢰 실행 환경을 단계적으로 검증하는 PoC다. 최종적으로는
-비신뢰 Host로부터 카메라 영상과 AI 모델/추론 데이터를 격리하면서, 두 pVM이 실제
-USB 카메라와 NVIDIA GPU를 사용해 영상 추론 파이프라인을 수행하는 것을 목표로 한다.
+이 저장소는 Linux v6.18에 pKVM 패치를 적용하고, QEMU에서 protected VM(pVM) 기반의 신뢰
+실행 환경을 단계적으로 검증하는 PoC다. 최종적으로는 비신뢰 Host로부터 카메라 영상과 AI
+모델/추론 데이터를 격리하면서, 두 pVM이 각자 할당받은 장치로 영상 추론 파이프라인을
+수행하는 것을 목표로 한다.
+
+장치 할당과 DMA 격리는 D-9 결정에 따라 S2MPU를 에뮬레이션하는 QEMU 환경에서 검증한다.
+실물 USB 카메라와 discrete NVIDIA GPU를 사용하는 검증은 이 PoC의 범위에서 제외했다.
 
 ## 프로젝트 목표
 
@@ -11,10 +14,10 @@ USB 카메라와 NVIDIA GPU를 사용해 영상 추론 파이프라인을 수행
   QEMU에서 커널 부팅, EL2 초기화, pVM 생성/실행 및 protected memory 격리를 검증한다.
 - **Secure World 공존 검증**: pKVM이 동작하는 Normal World와 OP-TEE Secure OS를 함께
   구성하고, pVM 실행 중에도 OP-TEE의 암호화/복호화 서비스를 사용할 수 있음을 확인한다.
-- **실제 장치의 안전한 할당**: USB 카메라 1대와 NVIDIA GPU 1대를 Camera pVM과 AI pVM에
+- **장치의 안전한 할당**: 카메라 역할 장치와 추론 역할 장치를 Camera pVM과 AI pVM에
   각각 할당하고, 장치 소유권과 DMA 접근 범위가 Host 및 다른 pVM과 분리되는지 확인한다.
 - **격리된 AI 파이프라인 구현**: Camera pVM이 수집한 프레임을 Host가 읽을 수 없는
-  protected memory에 저장하고, 버퍼 복사 없이 소유권을 AI pVM으로 이전해 GPU 추론을
+  protected memory에 저장하고, 버퍼 복사 없이 소유권을 AI pVM으로 이전해 추론을
   수행한 뒤 추론 결과만 Host Application에 반환한다.
 - **동적 pVM 수명주기 검증**: Host 요청의 권한과 정책을 확인한 뒤 pVM 이미지를 검증하고,
   Camera/AI pVM의 생성, 모니터링, 장애 격리, 종료 및 자원 회수를 일관되게 수행한다.
@@ -26,13 +29,13 @@ USB 카메라와 NVIDIA GPU를 사용해 영상 추론 파이프라인을 수행
 | QEMU | pKVM과 OP-TEE 통합 전 단계의 재현 가능한 기능 검증 환경 |
 | Linux kernel v6.18 + pKVM | EL2에서 Host와 pVM, pVM 상호 간 메모리 및 실행 경계 제공 |
 | OP-TEE | Secure World에서 카메라 영상의 암호화/복호화 등 보안 서비스 제공 |
-| USB camera 1대 | Camera pVM에 할당되는 실제 영상 입력 장치 |
-| NVIDIA GPU 1대 | AI pVM에 할당되는 실제 추론 가속 장치 |
+| 카메라 역할 장치 | Camera pVM에 할당되는 영상 입력 장치 |
+| 추론 역할 장치 | AI pVM에 할당되는 추론 담당 장치 |
 | Camera pVM / AI pVM | 카메라 캡처와 AI 추론을 분리하여 최소 권한으로 실행하는 보호 Workload |
 
-QEMU는 pKVM 부팅과 격리 동작을 먼저 확인하기 위한 기능 검증 환경이며, 실제 장치 할당과
-DMA 격리의 완료 여부는 USB 카메라, NVIDIA GPU 및 S2MPU를 갖춘 하드웨어 환경에서
-별도로 판정한다.
+QEMU는 pKVM 부팅과 격리 동작을 확인하는 기능 검증 환경이다. 장치 할당과 DMA 격리는
+`virt,iommu=smmuv3`로 S2MPU를 에뮬레이션하는 QEMU 환경에서 판정하며, 두 역할 장치도
+에뮬레이션 장치를 사용한다. 실물 하드웨어에서의 기밀성은 이 PoC에서 주장하지 않는다.
 
 ## Reference Scenario
 
@@ -58,6 +61,16 @@ DMA 격리의 완료 여부는 USB 카메라, NVIDIA GPU 및 S2MPU를 갖춘 하
 4. 카메라 프레임을 Host에 노출하지 않고 Camera pVM에서 AI pVM으로 zero-copy 전달한다.
 5. AI pVM이 GPU 추론을 완료하고 허용된 추론 결과만 Host Application에 반환한다.
 6. pVM 종료 후 장치, 메모리 및 vCPU 자원이 안전하게 회수된다.
+
+### 판정 기준
+
+성공 조건 3과 5는 QEMU 에뮬레이션 장치로 판정한다. 판정 대상은 장치 할당 경로, 배타적
+소유권 전환, DMA 격리, 결과 반환 경로가 성립하는지다. 실제 USB 카메라의 캡처 동작과
+NVIDIA GPU 가속 추론은 이 PoC에서 검증하지 않는다. 추론은 AI pVM 안의 CPU 경로로
+수행한다.
+
+이 대체 판정은 D-9 결정에 따른 것이다. 근거는 [하드웨어 후보
+조사](docs/phase-08/hardware-candidates.md)에 있다. 실장치 검증은 후속 과제로 분리했다.
 
 ## 문서 구조
 
