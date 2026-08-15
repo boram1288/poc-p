@@ -8,7 +8,10 @@
 
 ## 선행 조건
 
-- QEMU v9 이상과 `virt,iommu=smmuv3` 구성
+- SMMUv3 stage-2를 지원하는 QEMU와 `virt,iommu=smmuv3` 구성. QEMU 8.2.2는 stage-1만
+  제공해 pKVM nested 드라이버가 `-6` ENXIO로 거부한다. 실측 근거는
+  [E-3 스모크 테스트 실측 기록](e3-smoke-test.md)에 있다.
+- `pkvm,device-assignment` 노드를 포함한 device tree
 - Phase 02의 pKVM 커널이 해당 QEMU 머신에서 부팅
 - Phase 05의 다중 pVM 운용 성공
 
@@ -69,13 +72,36 @@ Phase 03의 `Found 0 assignable devices`는 QEMU 4.2.1에 S2MPU 옵션을 주지
 | 항목 | 내용 | 해소 방법 |
 |---|---|---|
 | Q-2 | pVM에 장치를 할당하는 경로 | Phase 08 착수 시 선행 조사, D-7에 반영 |
+| Q-5 | SMMUv3 stage-2를 지원하는 QEMU 버전 확보 | 릴리스 확인 후 빌드 또는 설치 |
+| Q-6 | `pkvm,device-assignment` 노드를 포함한 device tree 작성 | 커널 소스에서 스키마 확인 후 작성 |
 
 D-9 조사 당시의 Q-1, Q-3, Q-4는 실물 하드웨어 채택을 전제한 항목이었다. H-6 확정으로
 해소 대상에서 제외한다.
 
+Q-5와 Q-6은 2026-08-15 스모크 테스트에서 새로 드러났다. 상세는
+[E-3 스모크 테스트 실측 기록](e3-smoke-test.md)에 있다.
+
+### 스모크 테스트 결과 요약
+
+QEMU 8.2.2에서 실측한 결과는 다음과 같다.
+
+| 확인 항목 | 결과 |
+|---|---|
+| protected 부팅 | 성공. 단 마커는 `Protected hVHE mode initialized successfully` |
+| SMMUv3 노출 | 성공. 커널이 프로브하고 PCI 장치를 iommu group에 편입 |
+| EL2 iommu 드라이버 init | 실패. `-6` ENXIO |
+| `Found N assignable devices` | N = 0 |
+
+실패 원인은 두 가지다. QEMU 8.2.2의 SMMUv3가 stage-2를 지원하지 않아 pKVM nested
+드라이버가 거부한다(Q-5). 그리고 QEMU 기본 device tree에 할당 대상 장치를 기술하는 노드가
+없다(Q-6). 두 원인은 서로 독립이며 각각 해소해야 한다.
+
+EL2 IOMMU 풀 메모리는 `kvm-arm.hyp_iommu_pages`로 지정해야 한다. 4096 페이지에서 관련
+경고가 사라졌다. 실행 도구에 기본값으로 반영했다.
+
 ## 계획
 
-1. QEMU v9 이상을 준비하고 `virt,iommu=smmuv3`로 pKVM 커널을 protected 모드로 부팅한다.
+1. SMMUv3 stage-2를 지원하는 QEMU를 준비하고 `virt,iommu=smmuv3`로 pKVM 커널을 protected 모드로 부팅한다.
 2. `Found N assignable devices`가 0이 아닌 값이 되는지 확인한다.
 3. pVM에 장치를 할당하는 경로를 조사해 확정하고 결과를 D-7에 반영한다.
 4. 카메라 역할 장치를 Camera pVM에, 추론 역할 장치를 AI pVM에 배타적으로 할당한다.

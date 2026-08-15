@@ -34,7 +34,7 @@ PoC는 README의 최종 목표를 다음 순서로 분해해 검증한다.
 |---|---|---|---|
 | E-1 | x86_64 + QEMU TCG + pKVM | 빠른 기능 검증 | CPU 실행 및 메모리 매핑 경로 |
 | E-2 | QEMU v8 + TF-A + OP-TEE | Secure World 공존 | OP-TEE와 pKVM의 통합 동작 |
-| E-3 | QEMU v9 이상 + `virt,iommu=smmuv3` + pKVM + 에뮬레이션 장치 | 장치 할당, DMA 격리, 추론 파이프라인 | 장치 DMA 경로의 격리 로직 |
+| E-3 | QEMU (SMMUv3 stage-2 지원) + `virt,iommu=smmuv3` + pKVM + 에뮬레이션 장치 | 장치 할당, DMA 격리, 추론 파이프라인 | 장치 DMA 경로의 격리 로직 |
 
 QEMU TCG 결과만으로 실제 arm64 하드웨어의 기밀성을 주장하지 않는다.
 

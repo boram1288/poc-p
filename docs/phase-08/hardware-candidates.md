@@ -143,7 +143,7 @@ E-3는 H-6(QEMU `virt,iommu=smmuv3`) 단일 환경으로 확정한다. 실물 �
 
 | 프로필 | 구성 | 대상 |
 |---|---|---|
-| E-3 | QEMU v9 이상 + `virt,iommu=smmuv3` + pKVM 커널 + 에뮬레이션 장치 | G-8, G-9, G-11 |
+| E-3 | QEMU (SMMUv3 stage-2 지원) + `virt,iommu=smmuv3` + pKVM 커널 + 에뮬레이션 장치 | G-8, G-9, G-11 |
 
 근거는 다음과 같다.
 

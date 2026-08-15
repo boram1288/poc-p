@@ -101,7 +101,7 @@ Scenario의 GPU 추론을 AI pVM 안의 CPU 추론으로 대체한 것이다.
 |---|---|---|---|---|
 | E-1 기능 검증 | 커널/pVM 기능 경로 확인 | x86_64, QEMU 4.2.1 TCG, `virt,virtualization=on`, OP-TEE 없음 | 02~05, 07 | 사용 중 |
 | E-2 통합 검증 | Secure World 공존 확인 | QEMU v8, TF-A, OP-TEE, pKVM 커널 | 06 | Phase 06에서 구성 |
-| E-3 장치 할당 및 DMA 격리 검증 | 장치 할당, DMA 격리, 추론 파이프라인 확인 | QEMU v9 이상, `virt,iommu=smmuv3`, pKVM 커널, 에뮬레이션 장치 | 08~10 | 구성 가능 |
+| E-3 장치 할당 및 DMA 격리 검증 | 장치 할당, DMA 격리, 추론 파이프라인 확인 | QEMU (SMMUv3 stage-2 지원), `virt,iommu=smmuv3`, pKVM 커널, 에뮬레이션 장치 | 08~10 | 구성 가능 |
 
 E-1 결과는 E-2 또는 E-3의 결과를 대신하지 않는다.
 
@@ -236,7 +236,7 @@ Phase 05, 06, 07은 E-1과 E-2에서 병행할 수 있다. D-9 확정으로 Phas
 
 E-3에서 수행한다. 실물 하드웨어는 사용하지 않는다.
 
-1. QEMU v9 이상을 `virt,iommu=smmuv3`로 구성해 pKVM 커널을 protected 모드로 부팅한다.
+1. SMMUv3 stage-2를 지원하는 QEMU를 `virt,iommu=smmuv3`로 구성해 pKVM 커널을 protected 모드로 부팅한다.
 2. `Found N assignable devices`에서 N이 0이 아님을 확인한다.
 3. pVM에 장치를 할당하는 경로를 확정하고 D-7에 반영한다.
 4. 카메라 역할 장치를 Camera pVM에, 추론 역할 장치를 AI pVM에 배타적으로 할당한다.
