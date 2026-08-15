@@ -21,7 +21,7 @@ PoC는 README의 최종 목표를 다음 순서로 분해해 검증한다.
 5. pVM 2개 동시 운용
 6. OP-TEE 공존과 암호화/복호화 서비스 호출
 7. Host 요청 기반 pVM 동적 수명주기 관리
-8. USB 카메라와 NVIDIA GPU의 직접 할당과 S2MPU 기반 DMA 격리
+8. 카메라 역할 장치와 추론 역할 장치의 직접 할당과 S2MPU 기반 DMA 격리
 9. Camera pVM에서 AI pVM으로의 zero-copy 프레임 전달
 10. AI pVM의 GPU 추론과 결과만 반환
 
