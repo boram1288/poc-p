@@ -40,3 +40,9 @@ rtk pip list            rtk pnpm install        rtk npm run <script>
 - For debugging, use raw command without rtk prefix
 - `rtk proxy <cmd>` runs command without filtering but tracks usage
 <!-- /headroom:rtk-instructions -->
+
+## Phase completion workflow
+
+- 각 Phase의 완료 조건을 구현과 실측 검증으로 충족한 뒤 관련 소스와 문서를 Git에 커밋한다.
+- Phase 완료 커밋은 현재 브랜치의 설정된 원격 upstream으로 push한다.
+- 검증이 실패했거나 Phase가 아직 완료 상태가 아니면 완료 커밋이나 push를 하지 않는다.

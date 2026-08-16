@@ -8,6 +8,7 @@
 | `tools/pvm/` | pVM selftest 실행 도구 | 포함 |
 | `tools/multi-pvm/` | 다중 pVM 오케스트레이터와 initramfs 생성 도구 | 포함 |
 | `tools/optee-pkvm/` | OP-TEE QEMU v8 E-2 빌드·공존 검증 도구 | 포함 |
+| `tools/pvm-manager/` | 요청 권한·이미지 검증과 pVM 수명주기 검증 도구 | 포함 |
 | `optee-pkvm/` | OP-TEE 4.7.0 qemu_v8 매니페스트 체크아웃 | 제외 |
 
 새 구현 소스는 `work/src` 아래에 두고 빌드 결과를 소스 디렉터리에 섞지 않는다.

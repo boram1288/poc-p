@@ -33,7 +33,7 @@ Host로부터 카메라 영상과 AI 모델/추론 데이터를 격리한 상태
 | G-4 | Host CPU 접근 격리 | Host의 private page 접근이 차단됨을 대조군과 함께 확인 | 04 | 완료 |
 | G-5 | 다중 pVM 운용 | 독립된 pVM 2개를 동시에 실행하고 종료/자원 회수 확인 | 05 | 완료 |
 | G-6 | OP-TEE 공존 | TF-A/OP-TEE와 pKVM이 같은 시스템에서 정상 초기화/동작하고 암호화/복호화 서비스 호출 성공 | 06 | 완료 |
-| G-7 | 동적 pVM 수명주기 | Host 요청의 권한/정책 확인과 이미지 검증을 거쳐 pVM 생성, 모니터링, 장애 격리, 종료, 자원 회수 | 07 | 방식 미결 |
+| G-7 | 동적 pVM 수명주기 | Host 요청의 권한/정책 확인과 이미지 검증을 거쳐 pVM 생성, 모니터링, 장애 격리, 종료, 자원 회수 | 07 | 완료 |
 | G-8 | 장치 직접 할당 | 카메라 역할 장치와 추론 역할 장치를 각 pVM에 배타적으로 할당하고 회수 | 08 | 미착수 |
 | G-9 | DMA 격리 | S2MPU가 있는 환경에서 장치 DMA 접근 차단 확인 | 08 | 미착수 |
 | G-10 | zero-copy 프레임 전달 | 카메라 프레임을 Host에 노출하지 않고 Camera pVM에서 AI pVM으로 복사 없이 이전 | 09 | 방식 미결 |
@@ -121,7 +121,7 @@ E-3 결과에는 에뮬레이션 환경임을 함께 표기한다.
 | D-3 | 첫 pVM 검증은 커널 KVM selftest와 직접 ioctl 프로브 사용 | 확정 | VMM 의존성을 최소화한 기능 검증 |
 | D-4 | 다중 pVM VMM은 직접 KVM selftest를 조정하는 최소 오케스트레이터 사용 | 확정 | Phase 04 경로를 재사용해 두 KVM VM/vCPU의 동시 운용과 장애 격리를 최소 의존성으로 검증 |
 | D-5 | OP-TEE 검증은 E-1과 분리된 E-2 환경에서 수행 | 확정 | 현재 QEMU-only 결과와 통합 결과 혼동 방지 |
-| D-6 | pVM 이미지 검증과 신뢰 루트는 pvmfw 방식을 기준으로 평가 | 미결 | upstream pKVM에 pvmfw 항목이 없어 대체 경로 확인 필요 |
+| D-6 | E-1 이미지 검증은 Host 관리자 소유 SHA-256 허용 목록 사용. pvmfw 신뢰 체인은 후속 과제 | 확정 | 커널에 pvmfw 적재 훅은 있으나 E-1에 firmware와 검증된 부트 체인이 없어 Phase 07 PoC는 실행 전 해시 검증으로 대체 |
 | D-7 | 장치 직접 할당 경로는 VFIO와 pKVM pvIOMMU 조합으로 검토 | 미결 | AVF는 `vfio-platform` 경로만 문서화. PCIe 할당 경로 확인 필요 |
 | D-8 | pVM 간 프레임 전달은 EL2 벤더 모듈 확장을 1안, Host 릴레이를 대조군으로 둔다 | 미결 | upstream pKVM에 guest-to-guest 메모리 프리미티브가 없음 |
 | D-9 | E-3는 H-6(QEMU `virt,iommu=smmuv3`) 단일 환경. 실물 하드웨어는 PoC 범위에서 제외 | 확정 | Phase 08 조사. 실물 후보는 모두 미검증 리스크가 남고 조달 비용이 큼 |
@@ -145,7 +145,7 @@ share/lend 하이퍼콜을 구현하는 것이 사실상 유일한 경로라는 
 | 04 | 단일 pVM 실행 및 Host CPU 접근 격리 | E-1 | 완료 | [phase-04](phase-04/README.md) |
 | 05 | pVM 2개 동시 생성/운용 | E-1 | 완료 | [phase-05](phase-05/README.md) |
 | 06 | OP-TEE와 pKVM 공존 | E-2 | 완료 | [phase-06](phase-06/README.md) |
-| 07 | 동적 pVM 수명주기 관리 | E-1 | 방식 미결 | [phase-07](phase-07/README.md) |
+| 07 | 동적 pVM 수명주기 관리 | E-1 | 완료 | [phase-07](phase-07/README.md) |
 | 08 | 장치 직접 할당과 DMA 격리 | E-3 | 미착수 | [phase-08](phase-08/README.md) |
 | 09 | 프레임 버퍼 zero-copy 소유권 이전 | E-1, E-3 | 방식 미결 | [phase-09](phase-09/README.md) |
 | 10 | AI 추론 파이프라인 통합 | E-3 | 미착수 | [phase-10](phase-10/README.md) |
@@ -321,7 +321,7 @@ E-3에서 수행한다. 실물 하드웨어는 사용하지 않는다.
 | pKVM DMA 격리가 upstream 미머지 | 개발 브랜치 갱신 시 결과 재현 불가 | 사용한 커밋 SHA를 결과 문서에 고정 기록 |
 | pVM 간 zero-copy 프리미티브 부재 | Phase 09에서 EL2 확장 개발 필요, 일정과 난이도 급증 | Host 릴레이 대조군을 먼저 확보해 파이프라인을 성립시킨 뒤 zero-copy로 대체 |
 | 에뮬레이션 장치의 pVM 내부 드라이버 동작 불확실 | Phase 10 지연 | Phase 08에서 장치 할당 직후 최소 드라이버 기동을 먼저 확인 |
-| upstream pKVM의 pvmfw 미구현 | Phase 07의 이미지 검증 근거 부족 | 대체 검증 방식을 D-6에서 함께 평가 |
+| E-1에 pvmfw 신뢰 체인 미구성 | 비신뢰 Host에 대한 이미지 신뢰 근거 부족 | Phase 07은 SHA-256 허용 목록으로 변조 거부만 검증. pvmfw/verified boot와 서명 키 연결은 후속 과제로 명시 |
 | OP-TEE 커널 통합 충돌 | Phase 06 지연 | E-2 베이스라인을 먼저 고정하고 pKVM을 단계적으로 적용 |
 | 재생성 불가능한 work 산출물 | 결과 추적 불가 | 커밋 SHA, 명령, 로그 마커를 Phase 문서에 기록 |
 
