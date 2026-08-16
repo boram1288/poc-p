@@ -25,7 +25,7 @@ TIMEOUT=${3:-900}
 mkdir -p "${OUTPUT_DIR}"
 
 MACHINE="virt,virtualization=on,gic-version=3"
-CPU="max"
+CPU=${CPU:-max}
 SMP=2
 MEM=2G
 CMDLINE="console=ttyAMA0 kvm-arm.mode=${MODE} earlycon rdinit=/init"
@@ -47,6 +47,7 @@ timeout --signal=KILL ${TIMEOUT} ${QEMU} \
     -smp ${SMP} \
     -m ${MEM} \
     -nographic \
+    -nic none \
     < /dev/null \
     -no-reboot \
     -kernel ${KERNEL} \

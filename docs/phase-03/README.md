@@ -34,6 +34,12 @@ initramfs에는 `/bin/sh -> busybox` 링크가 반드시 있어야 한다. 이 �
 work/src/tools/qemu/run.sh protected
 ```
 
+QEMU가 VHE를 제공하는 버전에서 nVHE 경로를 재현하려면 다음과 같이 CPU를 선택한다.
+
+```bash
+CPU=cortex-a57 work/src/tools/qemu/run.sh protected
+```
+
 핵심 QEMU 옵션은 다음과 같다.
 
 ```text
@@ -58,6 +64,10 @@ work/src/tools/qemu/run.sh protected
 
 QEMU 4.2.1 TCG에서 protected 모드 부팅, EL2 pKVM 초기화, initramfs user space 진입과
 정상 poweroff를 확인했다.
+
+2026-08-16에는 QEMU 8.2.2 TCG와 `CPU=cortex-a57`로 다시 실행해 네 성공 마커와 종료 코드
+0을 확인했다. 로그는 `work/build/pkvm-qemu/console-protected-nvhe-rerun.log`에 있다. 기본
+`max` CPU는 이 QEMU 버전에서 hVHE를 제공하므로 nVHE 완료 조건 확인에는 사용하지 않았다.
 
 ## 한계
 

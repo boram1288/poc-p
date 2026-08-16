@@ -39,6 +39,12 @@ override 헤더에서 보충한다.
 work/src/tools/pvm/run-pvm.sh protected
 ```
 
+QEMU가 VHE를 제공하는 버전에서 nVHE 경로를 재현하려면 다음과 같이 실행한다.
+
+```bash
+CPU=cortex-a57 work/src/tools/pvm/run-pvm.sh protected
+```
+
 기본 로그는 `work/build/pkvm-pvm/console-pvm-protected.log`에 생성된다.
 
 ## 완료 조건
@@ -61,6 +67,10 @@ work/src/tools/pvm/run-pvm.sh protected
 - Host가 private page에 접근했을 때 예상된 segfault가 발생했다.
 - share, unshare, relinquish, MMIO guard와 private page poison 경로가 통과했다.
 - teardown 뒤 Host의 locked memory가 0으로 돌아왔다.
+
+2026-08-16에는 QEMU 8.2.2 TCG와 `CPU=cortex-a57`로 다시 실행했다. QEMU 종료 코드 0,
+capcheck rc=0, `All ok!`, selftest rc=0, 예상된 segfault와 정상 poweroff를 다시 확인했다.
+재실행 로그는 `work/build/pkvm-pvm/console-pvm-protected-rerun.log`에 있다.
 
 ## 한계
 
