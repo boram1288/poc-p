@@ -31,7 +31,7 @@ Host로부터 카메라 영상과 AI 모델/추론 데이터를 격리한 상태
 | G-2 | protected 부팅 | QEMU에서 EL2 진입과 protected nVHE 초기화 로그 확인 | 03 | 완료 |
 | G-3 | 단일 pVM 실행 | protected VM/vCPU 생성 후 `KVM_RUN` 완료 | 04 | 완료 |
 | G-4 | Host CPU 접근 격리 | Host의 private page 접근이 차단됨을 대조군과 함께 확인 | 04 | 완료 |
-| G-5 | 다중 pVM 운용 | 독립된 pVM 2개를 동시에 실행하고 종료/자원 회수 확인 | 05 | 미착수 |
+| G-5 | 다중 pVM 운용 | 독립된 pVM 2개를 동시에 실행하고 종료/자원 회수 확인 | 05 | 완료 |
 | G-6 | OP-TEE 공존 | TF-A/OP-TEE와 pKVM이 같은 시스템에서 정상 초기화/동작하고 암호화/복호화 서비스 호출 성공 | 06 | 미착수 |
 | G-7 | 동적 pVM 수명주기 | Host 요청의 권한/정책 확인과 이미지 검증을 거쳐 pVM 생성, 모니터링, 장애 격리, 종료, 자원 회수 | 07 | 방식 미결 |
 | G-8 | 장치 직접 할당 | 카메라 역할 장치와 추론 역할 장치를 각 pVM에 배타적으로 할당하고 회수 | 08 | 미착수 |
@@ -119,7 +119,7 @@ E-3 결과에는 에뮬레이션 환경임을 함께 표기한다.
 | D-1 | 타깃 커널은 Linux v6.18 LTS | 확정 | Phase 01 조사 |
 | D-2 | 패치 목록 기준은 `pkvm-mainline-6.18`, 선형 초안은 `pkvm-master-6.18` 사용 | 확정 | 두 브랜치의 완전성과 적용 편의 분리 |
 | D-3 | 첫 pVM 검증은 커널 KVM selftest와 직접 ioctl 프로브 사용 | 확정 | VMM 의존성을 최소화한 기능 검증 |
-| D-4 | 다중 pVM VMM은 Phase 05에서 최소 구현과 crosvm을 비교 후 결정 | 미결 | 동시 운용 요구에 맞춰 별도 평가 필요 |
+| D-4 | 다중 pVM VMM은 직접 KVM selftest를 조정하는 최소 오케스트레이터 사용 | 확정 | Phase 04 경로를 재사용해 두 KVM VM/vCPU의 동시 운용과 장애 격리를 최소 의존성으로 검증 |
 | D-5 | OP-TEE 검증은 E-1과 분리된 E-2 환경에서 수행 | 확정 | 현재 QEMU-only 결과와 통합 결과 혼동 방지 |
 | D-6 | pVM 이미지 검증과 신뢰 루트는 pvmfw 방식을 기준으로 평가 | 미결 | upstream pKVM에 pvmfw 항목이 없어 대체 경로 확인 필요 |
 | D-7 | 장치 직접 할당 경로는 VFIO와 pKVM pvIOMMU 조합으로 검토 | 미결 | AVF는 `vfio-platform` 경로만 문서화. PCIe 할당 경로 확인 필요 |
@@ -143,7 +143,7 @@ share/lend 하이퍼콜을 구현하는 것이 사실상 유일한 경로라는 
 | 02 | 커널 소스 통합 및 빌드 | E-1 | 완료 | [phase-02](phase-02/README.md) |
 | 03 | QEMU protected 부팅 및 EL2 초기화 | E-1 | 완료 | [phase-03](phase-03/README.md) |
 | 04 | 단일 pVM 실행 및 Host CPU 접근 격리 | E-1 | 완료 | [phase-04](phase-04/README.md) |
-| 05 | pVM 2개 동시 생성/운용 | E-1 | 미착수 | [phase-05](phase-05/README.md) |
+| 05 | pVM 2개 동시 생성/운용 | E-1 | 완료 | [phase-05](phase-05/README.md) |
 | 06 | OP-TEE와 pKVM 공존 | E-2 | 미착수 | [phase-06](phase-06/README.md) |
 | 07 | 동적 pVM 수명주기 관리 | E-1 | 방식 미결 | [phase-07](phase-07/README.md) |
 | 08 | 장치 직접 할당과 DMA 격리 | E-3 | 미착수 | [phase-08](phase-08/README.md) |
