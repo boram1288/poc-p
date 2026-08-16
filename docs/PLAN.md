@@ -32,7 +32,7 @@ Host로부터 카메라 영상과 AI 모델/추론 데이터를 격리한 상태
 | G-3 | 단일 pVM 실행 | protected VM/vCPU 생성 후 `KVM_RUN` 완료 | 04 | 완료 |
 | G-4 | Host CPU 접근 격리 | Host의 private page 접근이 차단됨을 대조군과 함께 확인 | 04 | 완료 |
 | G-5 | 다중 pVM 운용 | 독립된 pVM 2개를 동시에 실행하고 종료/자원 회수 확인 | 05 | 완료 |
-| G-6 | OP-TEE 공존 | TF-A/OP-TEE와 pKVM이 같은 시스템에서 정상 초기화/동작하고 암호화/복호화 서비스 호출 성공 | 06 | 미착수 |
+| G-6 | OP-TEE 공존 | TF-A/OP-TEE와 pKVM이 같은 시스템에서 정상 초기화/동작하고 암호화/복호화 서비스 호출 성공 | 06 | 완료 |
 | G-7 | 동적 pVM 수명주기 | Host 요청의 권한/정책 확인과 이미지 검증을 거쳐 pVM 생성, 모니터링, 장애 격리, 종료, 자원 회수 | 07 | 방식 미결 |
 | G-8 | 장치 직접 할당 | 카메라 역할 장치와 추론 역할 장치를 각 pVM에 배타적으로 할당하고 회수 | 08 | 미착수 |
 | G-9 | DMA 격리 | S2MPU가 있는 환경에서 장치 DMA 접근 차단 확인 | 08 | 미착수 |
@@ -100,7 +100,7 @@ Scenario의 GPU 추론을 AI pVM 안의 CPU 추론으로 대체한 것이다.
 | 프로필 | 목적 | 구성 | 담당 Phase | 상태 |
 |---|---|---|---|---|
 | E-1 기능 검증 | 커널/pVM 기능 경로 확인 | x86_64, QEMU 4.2.1 TCG, `virt,virtualization=on`, OP-TEE 없음 | 02~05, 07 | 사용 중 |
-| E-2 통합 검증 | Secure World 공존 확인 | QEMU v8, TF-A, OP-TEE, pKVM 커널 | 06 | Phase 06에서 구성 |
+| E-2 통합 검증 | Secure World 공존 확인 | QEMU 8.2.2, TF-A v2.13-rc0, OP-TEE 4.7.0, pKVM 커널 | 06 | 사용 완료 |
 | E-3 장치 할당 및 DMA 격리 검증 | 장치 할당, DMA 격리, 추론 파이프라인 확인 | QEMU (SMMUv3 stage-2 지원), `virt,iommu=smmuv3`, pKVM 커널, 에뮬레이션 장치 | 08~10 | 구성 가능 |
 
 E-1 결과는 E-2 또는 E-3의 결과를 대신하지 않는다.
@@ -144,7 +144,7 @@ share/lend 하이퍼콜을 구현하는 것이 사실상 유일한 경로라는 
 | 03 | QEMU protected 부팅 및 EL2 초기화 | E-1 | 완료 | [phase-03](phase-03/README.md) |
 | 04 | 단일 pVM 실행 및 Host CPU 접근 격리 | E-1 | 완료 | [phase-04](phase-04/README.md) |
 | 05 | pVM 2개 동시 생성/운용 | E-1 | 완료 | [phase-05](phase-05/README.md) |
-| 06 | OP-TEE와 pKVM 공존 | E-2 | 미착수 | [phase-06](phase-06/README.md) |
+| 06 | OP-TEE와 pKVM 공존 | E-2 | 완료 | [phase-06](phase-06/README.md) |
 | 07 | 동적 pVM 수명주기 관리 | E-1 | 방식 미결 | [phase-07](phase-07/README.md) |
 | 08 | 장치 직접 할당과 DMA 격리 | E-3 | 미착수 | [phase-08](phase-08/README.md) |
 | 09 | 프레임 버퍼 zero-copy 소유권 이전 | E-1, E-3 | 방식 미결 | [phase-09](phase-09/README.md) |
