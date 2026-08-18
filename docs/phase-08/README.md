@@ -15,6 +15,29 @@
 - Phase 02의 pKVM 커널이 해당 QEMU 머신에서 부팅
 - Phase 05의 다중 pVM 운용 성공
 
+## D-7 결정
+
+D-7은 다음 장치 직접 할당 경로로 확정했다.
+
+```text
+QEMU edu PCI function
+  → pkvm,device-assignment platform descriptor
+  → vfio-platform
+  → VFIO_PKVM_IOMMU container
+  → KVM_DEV_TYPE_VFIO / KVM_DEV_VFIO_PVIOMMU
+  → EL2-managed PV IOMMU domain
+  → Camera 또는 AI pVM
+```
+
+Camera와 AI의 assignment identity는 각각 `10000000.pkvm-edu`와
+`10100000.pkvm-edu` platform device다. 대응하는 QEMU edu PCI function은 DMA engine과
+bus-master control을 제공한다. Guest는 virtual SID `0x10` 또는 `0x18`을 사용해 자체
+pVIOMMU domain에 장치를 attach하지만 SMMU page table은 EL2가 관리한다.
+
+`vfio-pci` 직접 할당은 문서화된 pKVM 경로가 없어 채택하지 않았다.
+`CONFIG_ARM_SMMU_V3_PKVM` nested driver도 Guest가 SMMU table을 직접 관리하지 않는 이
+single-stage 설계에는 필요하지 않아 비활성화했다.
+
 ## D-9 결정
 
 D-9는 H-6(QEMU `virt,iommu=smmuv3`)으로 확정했다. E-3는 QEMU 단일 환경이며 실물
@@ -63,22 +86,22 @@ Phase 03의 `Found 0 assignable devices`는 QEMU 4.2.1에 S2MPU 옵션을 주지
    드라이버는 2023년부터 RFC 상태이며 아직 머지되지 않았다. Phase 02가 활성화한 설정은
    android-kvm 트리 기준이고 upstream 상태와 다르다.
 2. AVF의 장치 할당은 `vfio-platform` 경로다. `vfio-pci` 기반 PCIe 장치 할당은 pKVM과 AVF
-   문서 어디에도 명시되어 있지 않다. 에뮬레이션 PCIe 장치에도 같은 제약이 적용된다.
-   Q-2의 조사 결과에 따라 `vfio-platform` 경로의 에뮬레이션 장치로 전환할 수 있다.
+   문서 어디에도 명시되어 있지 않다. D-7은 `vfio-platform` descriptor로 QEMU 역할 장치를
+   검증했으며, 실물 discrete PCIe 장치 직접 할당은 후속 과제로 남긴다.
 3. QEMU의 S2MPU는 에뮬레이션이다. 실물 `SMMUv3`의 동작과 다를 수 있다.
 
-### 남은 확인 항목
+### 확인 항목 처리 결과
 
-| 항목 | 내용 | 해소 방법 |
+| 항목 | 내용 | 처리 결과 |
 |---|---|---|
-| Q-2 | pVM에 장치를 할당하는 경로 | Phase 08 착수 시 선행 조사, D-7에 반영 |
-| Q-5 | SMMUv3 stage-2를 지원하는 QEMU 버전 확보 | 릴리스 확인 후 빌드 또는 설치 |
-| Q-6 | `pkvm,device-assignment` 노드를 포함한 device tree 작성 | 커널 소스에서 스키마 확인 후 작성 |
+| Q-2 | pVM에 장치를 할당하는 경로 | 해소. D-7의 `vfio-platform` + KVM VFIO pVIOMMU + EL2 PV IOMMU 경로로 확정 |
+| Q-5 | SMMUv3 stage-2를 지원하는 QEMU 버전 확보 | 해소. nested Stage-2가 필요 없는 PV single-stage 설계와 QEMU v10을 사용 |
+| Q-6 | `pkvm,device-assignment` 노드를 포함한 device tree 작성 | 해소. Camera/AI용 descriptor 두 개를 QEMU DT에 추가하고 assignable device로 실측 |
 
 D-9 조사 당시의 Q-1, Q-3, Q-4는 실물 하드웨어 채택을 전제한 항목이었다. H-6 확정으로
 해소 대상에서 제외한다.
 
-Q-5와 Q-6은 2026-08-15 스모크 테스트에서 새로 드러났다. 상세는
+Q-5와 Q-6은 2026-08-15 스모크 테스트에서 발견했고 Phase 08 구현에서 해소했다. 상세는
 [E-3 스모크 테스트 실측 기록](e3-smoke-test.md)에 있다.
 
 ### 스모크 테스트 결과 요약
@@ -168,7 +191,7 @@ Kernel: CONFIG_ARM_SMMU_V3=n, CONFIG_ARM_SMMU_V3_PKVM=n,
         CONFIG_ARM_SMMU_V3_PKVM_PV=y, CONFIG_PKVM_PVIOMMU=y,
         CONFIG_PKVM_PVM_DMA_SHARE=y, CONFIG_VFIO_PLATFORM=y
 Result: PVM_FRAMEWORK_RUN_OK, QEMU_RC=0, Mlocked=0 kB
-Log: work/build/pvm-framework/console-phase08-share-second.log
+Log: work/build/pvm-framework/console-phase08-share-final.log
 ```
 
 | 완료 조건 | 실측 증거 |

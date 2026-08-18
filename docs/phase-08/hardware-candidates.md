@@ -166,11 +166,12 @@ E-3는 H-6(QEMU `virt,iommu=smmuv3`) 단일 환경으로 확정한다. 실물 �
 | 항목 | 내용 | 처리 |
 |---|---|---|
 | Q-1 | H-1에서 `kvm-arm.mode=protected` 부팅이 되는가 | 무효. 실물 미채택 |
-| Q-2 | pVM에 장치를 할당하는 경로를 어떻게 만드는가 | 유효. Phase 08 착수 시 선행 조사 |
+| Q-2 | pVM에 장치를 할당하는 경로를 어떻게 만드는가 | 해소. D-7의 `vfio-platform` + KVM VFIO pVIOMMU + EL2 PV IOMMU 경로로 확정 |
 | Q-3 | README의 "NVIDIA GPU 1대"가 통합 GPU를 포함하는가 | 무효. 실물 미채택 |
 | Q-4 | android-kvm 트리를 H-1에서 부팅할 수 있는가 | 무효. 실물 미채택 |
 
-Q-2만 남는다. Phase 08의 1번 확인 항목이며 결과는 D-7에 반영한다.
+Q-2는 Phase 08에서 해소했고 결과를 D-7에 반영했다. `vfio-pci` 직접 할당과 실물 discrete
+PCIe 장치는 이 PoC에서 검증하지 않고 후속 과제로 남긴다.
 
 ### 5.2 후속 과제로 넘기는 항목
 

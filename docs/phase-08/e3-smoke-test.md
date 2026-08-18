@@ -200,29 +200,31 @@ kvm [1]: Found 1 assignable devices
 ```
 
 QEMU 소스 커밋은 [`2ebc078`](https://github.com/boram1288/qemu/commit/2ebc078)이며
-branch는 `boram1288/phase08-pkvm-edu`다. 다음 단계는 EL2 reset callback과 Phase 07
-runner의 device MMIO mapping을 연결하는 것이다.
+branch는 `boram1288/phase08-pkvm-edu`다. 이 smoke 단계의 disabled descriptor 한 개는
+Phase 08 완료 구현인 QEMU `5b3965e`에서 `vfio-platform`에 bind할 enabled descriptor
+두 개와 EL2 reset register로 대체됐다.
 
-H-6 채택은 유지한다. QEMU가 SMMUv3를 제공하고 pKVM이 protected로 부팅하는 것까지는
-확인됐다. 다만 조사 단계에서 기록하지 못한 두 개의 선행 작업이 드러났다.
+H-6 채택은 유지한다. 다음 두 항목은 smoke-test 당시 선행 작업으로 발견됐고 Phase 08
+완료 시점에 모두 해소됐다.
 
-| 항목 | 내용 |
-|---|---|
-| Q-5 | SMMUv3 stage-2를 지원하는 QEMU 버전 확보 |
-| Q-6 | `pkvm,device-assignment` 노드를 포함한 device tree 작성 |
+| 항목 | 당시 내용 | 최종 처리 |
+|---|---|---|
+| Q-5 | SMMUv3 stage-2를 지원하는 QEMU 버전 확보 | nested Stage-2가 필요 없는 PV single-stage 설계와 QEMU v10으로 해소 |
+| Q-6 | `pkvm,device-assignment` 노드를 포함한 device tree 작성 | Camera/AI용 enabled platform descriptor 두 개로 해소 |
 
-Q-5는 QEMU 버전 문제다. stage-2 지원이 어느 릴리스에 들어갔는지 확인하고 해당 버전
-이상을 준비한다. QEMU SMMUv3의 stage-2 지원 패치는 2023년 5월, nested 지원 패치는 2024년에
-투고됐다. 8.2.2에 stage-2가 없는 것은 실측으로 확인했다.
+Q-5의 원래 가정은 nested driver를 사용할 때만 유효했다. 최종 D-7 경로는 Guest가 SMMU
+table을 관리하지 않는 EL2 PV IOMMU이므로 nested driver와 SMMUv3 Stage-2 capability가
+필요하지 않다. QEMU 8.2.2에 stage-2가 없다는 당시 실측 자체는 유효하다.
 
-Q-6은 QEMU 버전과 무관하다. 상위 버전을 확보해도 별도로 해결해야 한다.
+Q-6은 QEMU `5b3965e`의 DT 생성과 kernel `9f57ce1`의 EL2 device reset/reclaim 구현으로
+해결했다. 최종 assignment 경로와 실측은 [Phase 08 README](README.md)와
+[validation evidence](validation-results.md)에 기록했다.
 
-## 다음 작업
+## 후속 범위
 
-1. stage-2를 지원하는 QEMU 버전을 특정하고 확보한다. 확보 후 `features` 값의 비트 10을
-   다시 확인한다.
-2. `pkvm,device-assignment` 노드의 스키마를 커널 소스에서 확인하고 device tree를 작성한다.
-3. 두 항목이 해소된 뒤 `Found N assignable devices`를 다시 측정한다.
+실물 discrete PCIe 장치의 `vfio-pci` 직접 할당은 D-7에서 채택하지 않았으며 이 PoC 이후의
+후속 과제다. Phase 08은 QEMU 역할 장치를 `vfio-platform` + KVM VFIO pVIOMMU + EL2 PV
+IOMMU로 할당하는 범위에서 완료됐다.
 
 ## 재현 방법
 

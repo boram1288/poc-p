@@ -21,6 +21,9 @@ work/build/pvm-framework/console-phase08-share-second.log 300
 검증에 사용한 소스 revision은 kernel `9f57ce1` (`boram1288/pkvm-linux`,
 `phase08-pkvm-edu`)와 QEMU `5b3965e` (`boram1288/qemu`, `phase08-pkvm-edu`)이다.
 
+이 실측으로 D-7은 `vfio-platform` → `VFIO_PKVM_IOMMU` → KVM VFIO pVIOMMU →
+EL2-managed PV IOMMU 경로로 확정했다. `vfio-pci`와 nested driver는 사용하지 않는다.
+
 ## 증거 marker
 
 | 단계 | marker 또는 로그 |
