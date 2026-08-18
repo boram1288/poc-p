@@ -15,6 +15,7 @@
 | [Phase 06-B README](./README.md) | 목표, 구현 이력, 모듈뷰, Host 노출 판정과 완료조건 | 전체 결과를 먼저 파악할 때 |
 | [수동 검증 가이드](./VERIFICATION.md) | 처음 실행하는 개발자가 빌드 스크립트 내부 과정까지 명령 단위로 직접 수행하고 결과 marker를 확인하는 방법 | 환경을 재현하고 실측할 때 |
 | [Host·guest OP-TEE AES 코드 흐름](./OPTEE-AES-CODE-FLOW.md) | `optee_example_aes`부터 libteec, Linux FF-A, pKVM EL2, OP-TEE SPMC와 AES TA까지의 실제 함수 및 Host·guest 시퀀스 차이 | 호출 경로와 코드를 분석할 때 |
+| [FF-A 개념과 표준](./WHAT-IS-FFA.md) | Arm 공식 사양 기준 FF-A의 목적, endpoint·partition·instance·conduit, messaging과 memory management protocol | FF-A를 처음 이해할 때 |
 | [FF-A guest 직접 요청 경로](./FFA-GUEST-DIRECT-PATH.md) | guest가 Host OP-TEE stack을 우회하여 HVC→pKVM→SMC로 TA를 호출하는 원리, endpoint 검증과 shared-memory page 전환 | Host를 거치지 않는 이유를 이해할 때 |
 
 README는 완료 판정과 보안 범위를 요약한다. 실행 명령은 수동 검증 가이드, 함수·파일별
@@ -402,6 +403,7 @@ FF-A 기반 목표 경로와 위에서 정의한 L0 Host page-state 격리 범�
 | Phase 결과와 보안 범위 | [README](./README.md) |
 | 처음부터 수동으로 재현하는 명령과 marker | [수동 검증 가이드](./VERIFICATION.md) |
 | Host·guest 함수 호출과 시퀀스 다이어그램 | [OP-TEE AES 코드 흐름](./OPTEE-AES-CODE-FLOW.md) |
+| FF-A 표준의 목적과 핵심 개념 | [FF-A 개념과 표준](./WHAT-IS-FFA.md) |
 | FF-A가 Host OP-TEE stack을 우회하는 원리 | [FF-A guest 직접 요청 경로](./FFA-GUEST-DIRECT-PATH.md) |
 | guest rootfs·init·kvmtool 빌드 도구 | `work/src/tools/optee-pkvm-guest/` |
 | Host·guest 공존 및 회수 검증 하네스 | `work/src/tools/optee-pkvm/coexist-test.sh` |

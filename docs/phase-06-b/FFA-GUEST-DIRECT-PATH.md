@@ -2,6 +2,7 @@
 
 이 문서는 protected Linux pVM의 `optee_example_aes`가 Host의 OP-TEE component를 거치지
 않고 Secure World의 OP-TEE TA를 호출할 수 있는 이유를 현재 구현 코드 기준으로 설명한다.
+FF-A 자체의 표준 용어와 기능은 먼저 [FF-A란 무엇인가](./WHAT-IS-FFA.md)를 참조한다.
 
 여기서 “직접”은 guest가 Secure World와 물리적으로 한 번에 전환한다는 뜻이 아니다. 요청은
 반드시 pKVM EL2의 검증과 TF-A SPMD의 routing을 거친다. 우회하는 대상은 비신뢰 영역인 Host
