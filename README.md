@@ -80,6 +80,8 @@ QEMU는 pKVM 부팅과 격리 동작을 확인하는 기능 검증 환경이다.
 
 - [전체 수행 계획](docs/PLAN.md): 목표, Phase 순서, 완료 조건, 현재 상태와 남은 작업
 - `docs/phase-00` ~ `docs/phase-11`: Phase별 절차, 완료 조건, 결과와 한계
+- [Phase 07 C VM 관리 프레임워크](docs/phase-07/userspace-vm-framework-design.md): public API,
+  controller, VM runner와 private KVM backend 설계 및 완료 조건
 - [work 디렉터리 안내](work/README.md): 소스와 빌드 산출물 관리 규칙
 
 위 성공 조건 6개는 수행 계획의 목표 ID 및 Phase에 매핑되어 있다. 매핑표는
@@ -94,13 +96,14 @@ work/
 │   └── tools/
 │       ├── analysis/     패치 집합 분석 도구
 │       ├── qemu/         protected 부팅 실행 도구
-│       └── pvm/          pVM selftest 실행 도구
+│       ├── pvm/          pVM selftest 실행 도구
+│       └── pvm-framework/ Phase 07 C 기반 VM 관리 프레임워크
 └── build/
     ├── analysis/         커밋 집계/분류 결과
     ├── pkvm-full-clang/  clang 커널 빌드 산출물
-    ├── pkvm-full-gcc/    gcc 커널 빌드 산출물
     ├── pkvm-qemu/        부팅용 initramfs와 콘솔 로그
-    └── pkvm-pvm/         pVM selftest 산출물과 콘솔 로그
+    ├── pkvm-pvm/         pVM selftest 산출물과 콘솔 로그
+    └── pvm-framework/    C framework binaries, guest image와 E-1 검증 로그
 ```
 
 Phase 05 이후의 도구와 산출물은 각 Phase 문서에 명시한 경로에 추가한다.
@@ -108,6 +111,9 @@ Phase 05 이후의 도구와 산출물은 각 Phase 문서에 명시한 경로�
 `work/src/tools`의 프로젝트 도구는 Git으로 관리한다. 커널 소스 트리는 submodule로 두어
 커밋 SHA만 기록한다. 빌드 산출물은 재생성 가능하므로 Git에서 제외한다. 모든 명령은 별도
 언급이 없으면 저장소 루트에서 실행한다.
+
+저장 공간 정책에 따라 커널 검증 입력은 `pkvm-full-clang`만 유지하며 삭제한
+`pkvm-full-gcc`를 복구하거나 gcc kernel 교차 검증을 수행하지 않는다.
 
 저장소를 처음 받을 때는 submodule을 partial clone으로 초기화한다. 커널 트리가 5.6GB를
 넘는다.
