@@ -9,21 +9,40 @@
 ## 1. 재수행 배경
 
 기존 Phase 07의 `pvm-manager.sh`는 요청 파일의 UID, 역할, 이미지 해시를 검사한 뒤
-`pkvm.bin` 프로세스를 시작하거나 종료한다. 그러나 `pkvm.bin`은 순수한 게스트 이미지가
+`pkvm.bin` 프로세스를 시작하거나 종료한다. 그러나 `pkvm.bin`은 순수한 guest image가
 아니라 다음 요소가 한 ELF에 결합된 Linux KVM selftest다.
 
 | 요소 | 현재 위치와 역할 |
 |---|---|
-| Host 제어 | `pvm-manager.sh`가 실행 파일의 프로세스 수명주기를 관리 |
+| Host 제어 | `pvm-manager.sh`가 executable의 프로세스 수명주기를 관리 |
 | KVM VMM | `pkvm.c`와 KVM selftest library가 `/dev/kvm`, VM/vCPU, memory slot을 직접 관리 |
-| Guest payload | `pkvm.c` 안의 guest 코드와 protected VM 진입 코드 |
+| guest code | `pkvm.c` 안의 guest code와 protected VM 진입 코드 |
 | 검증 코드 | 같은 `pkvm.c` 안에서 heartbeat, 격리, teardown 결과를 판정 |
 
 즉 기존 관리자는 KVM VM 객체의 상태를 알지 못하고 PID와 열린 KVM FD 개수만 관찰한다.
 재수행에서는 KVM ioctl을 프레임워크 내부 backend로 한정하고, Application에는 안정된 C API와
 관리 명령만 제공한다.
 
-## 2. 범위와 성공 기준
+## 2. 용어 규칙
+
+이 문서와 이후 구현에서는 Host 쪽 process, VM에 넣는 파일과 VM 안에서 실행되는 코드를
+구분하기 위해 다음 용어를 사용한다.
+
+| 통일 용어 | 의미 | 사용 예 |
+|---|---|---|
+| controller daemon | client 요청을 인증하고 정책·상태·VM runner를 관리하는 Host process인 `pvmd` | VM runner 생성, 상태 조회, 종료 지시 |
+| VM runner | VM 하나를 담당하는 Host VMM process. KVM VM/vCPU FD를 소유하는 `pvm-runner` | Camera VM runner, AI VM runner |
+| KVM backend | VM runner 안에서만 사용되는 private C 모듈. 실제 KVM ioctl을 수행 | protected VM 생성, memory 등록, `KVM_RUN` |
+| guest image | VM memory에 적재할 파일 | Phase 07 test guest image, 향후 Linux `Image` |
+| guest code | guest image에서 pVM 안에 실행되는 코드와 기능 | heartbeat 출력, 종료 마커 기록 |
+| pVM instance | controller가 ID와 상태를 부여해 관리하는 논리적 VM 한 개 | `camera-1`, `ai-1` |
+| legacy selftest executable | VMM, guest code와 검증 코드가 결합된 현재 `pkvm.bin` | 새 guest image와 구분 |
+
+`worker`는 모두 **VM runner**로 바꾼다. `payload`와 `workload`는 파일과 실행 중 기능을
+혼동시키므로 사용하지 않고, 파일이면 **guest image**, pVM 안의 동작이면 **guest code**로
+표현한다. 특히 현재 `pkvm.bin`은 guest image가 아니라 **legacy selftest executable**이다.
+
+## 3. 범위와 성공 기준
 
 이번 재수행은 Phase 07 완료 조건을 대체하지 않고 더 높은 수준의 제어 경로로 다시 검증한다.
 
@@ -38,7 +57,7 @@ OP-TEE와 Trusted Application 호출은 이번 Phase 07 재수행 범위에 포�
 커널은 저장 공간 정책에 따라 `pkvm-full-clang`만 사용하며 삭제된 `pkvm-full-gcc` 산출물을
 복구하거나 gcc 교차 검증을 수행하지 않는다.
 
-## 3. 기능 요구사항 초안
+## 4. 기능 요구사항 초안
 
 아래 표에서 **확정**은 기존 Phase 07 목표와 이번 요청으로 이미 정해진 항목이고,
 **제안**은 아키텍처 선택 후 확정할 항목이다.
@@ -48,17 +67,17 @@ OP-TEE와 Trusted Application 호출은 이번 Phase 07 재수행 범위에 포�
 | FR-01 | 확정 | Application은 KVM ioctl 대신 C client API를 사용한다. | Application의 KVM header/ioctl 참조가 0건인지 검사 |
 | FR-02 | 확정 | `camera`, `ai` 역할의 pVM을 생성·시작·조회·정지·삭제한다. | 역할별 정상 lifecycle 시험 |
 | FR-03 | 확정 | UID와 역할 정책을 VM 생성 전에 검사한다. | 비인가 UID 요청 거부 |
-| FR-04 | 확정 | 실행 전 workload 무결성을 SHA-256 허용 목록으로 검사한다. | 변조 workload 거부 |
+| FR-04 | 확정 | 실행 전 guest image의 무결성을 SHA-256 허용 목록으로 검사한다. | 변조 guest image 거부 |
 | FR-05 | 확정 | 두 pVM을 동시에 실행하고 독립 상태를 조회한다. | Camera/AI 동시 RUNNING 확인 |
 | FR-06 | 확정 | 한 pVM의 강제 종료가 다른 pVM과 관리 경로를 중단시키지 않는다. | Camera 장애 후 AI와 관리자 생존 확인 |
 | FR-07 | 확정 | 종료 후 VM/vCPU/memory/FD 자원을 회수한다. | PID·KVM FD 소멸과 `Mlocked` 확인 |
 | FR-08 | 제안 | 요청·응답에 protocol version과 request ID를 둔다. | 잘못된 version 및 중복 ID 시험 |
 | FR-09 | 제안 | `CREATED`, `RUNNING`, `STOPPING`, `STOPPED`, `FAILED` 상태 전이를 강제한다. | 허용되지 않은 전이 거부 시험 |
-| FR-10 | 제안 | 프레임워크가 비정상 worker 종료를 감지하고 `FAILED` 원인을 보존한다. | `SIGKILL` 주입 후 상태·exit reason 확인 |
-| FR-11 | 제안 | daemon 재시작 시 실행 중 worker를 재발견하거나 안전하게 정리한다. | daemon restart recovery 시험 |
+| FR-10 | 제안 | 프레임워크가 VM runner의 비정상 종료를 감지하고 `FAILED` 원인을 보존한다. | `SIGKILL` 주입 후 상태·exit reason 확인 |
+| FR-11 | 제안 | controller daemon 재시작 시 실행 중 VM runner를 재발견하거나 안전하게 정리한다. | daemon restart recovery 시험 |
 | FR-12 | 제안 | 조회 API로 role, instance ID, state, PID, vCPU 수, memory 크기, 종료 원인을 반환한다. | API 응답 필드 검사 |
 
-## 4. 비기능 요구사항 초안
+## 5. 비기능 요구사항 초안
 
 | ID | 상태 | 요구사항 |
 |---|---|---|
@@ -75,12 +94,12 @@ OP-TEE와 Trusted Application 호출은 이번 Phase 07 재수행 범위에 포�
 성능 정량 평가, 원격 관리, 네트워크 API, 영구 데이터베이스, 라이브 마이그레이션,
 제품 수준 서명·키 관리 및 고가용성은 이번 재수행의 비기능 범위에서 제외한다.
 
-## 5. 확인된 제약사항
+## 6. 확인된 제약사항
 
 | ID | 제약 | 설계 영향 |
 |---|---|---|
 | C-01 | KVM ioctl 자체는 없어지는 것이 아니라 신뢰된 VMM/backend 내부로 이동해야 한다. | ioctl 사용 파일을 private backend로 한정 |
-| C-02 | 현재 `pkvm.bin`은 VMM, guest payload, 검증이 결합된 selftest ELF다. | 순수 guest image loader로 바로 사용할 수 없음 |
+| C-02 | 현재 `pkvm.bin`은 VMM, guest code와 검증이 결합된 legacy selftest ELF다. | guest image로 바로 사용할 수 없음 |
 | C-03 | protected VM은 일반 KVM VM 생성 외에 `KVM_CAP_ARM_PROTECTED_VM` 설정과 전용 부팅 순서가 필요하다. | backend가 순서와 오류 rollback을 캡슐화 |
 | C-04 | E-1 initramfs는 BusyBox 중심의 최소 환경이다. | 외부 runtime과 동적 library 의존을 피함 |
 | C-05 | QEMU TCG 결과는 기능 검증이며 실장치 성능·보안 보증이 아니다. | 실측 결과의 주장 범위를 E-1로 제한 |
@@ -89,7 +108,7 @@ OP-TEE와 Trusted Application 호출은 이번 Phase 07 재수행 범위에 포�
 | C-08 | OP-TEE/TA가 없어도 완료 가능한 목적 범위다. | Secure World 연동 API는 이번 설계에서 제외 |
 | C-09 | kernel selftest library는 제품용 안정 ABI가 아니다. | 초기 backend adapter로 격리하고 public API에 노출하지 않음 |
 
-## 6. 관리 방식 후보
+## 7. 관리 방식 후보
 
 Application 안에 KVM backend를 포함하는 embedded library 방식은 후보에서 제외한다.
 Application crash와 VM lifecycle이 결합되고 중앙 정책을 보장하기 어려워, 이번 재수행의
@@ -108,7 +127,7 @@ Application은 C client API만 사용하고 `pvmd`가 인증, 정책, 이미지 
 소유한다. VM별 vCPU는 daemon 안의 thread로 실행한다.
 
 - 장점: 정책, 상태와 KVM 객체가 한 process에 있어 동기화와 rollback이 단순하다.
-- 장점: worker process와 내부 IPC가 없어 구현량, memory 사용량과 context switch가 적다.
+- 장점: 별도 VM runner process와 내부 IPC가 없어 구현량, memory 사용량과 context switch가 적다.
 - 단점: 잘못된 pointer 접근, assertion, signal 같은 process-wide fault가 모든 VM과 관리
   API를 동시에 중단시킬 수 있다.
 - 단점: 모든 VM thread가 daemon의 주소 공간과 `/dev/kvm` 권한을 공유하므로 VM별 최소 권한
@@ -116,43 +135,43 @@ Application은 C client API만 사용하고 `pvmd`가 인증, 정책, 이미지 
 - Phase 07 적합성: lifecycle 기능은 검증할 수 있지만 한 VM backend 장애가 다른 VM과
   manager에 전파되지 않는다는 조건을 process boundary로 입증할 수 없다.
 
-### 안 B. controller daemon과 VM별 worker process 분리 — 권고
+### 안 B. controller daemon과 VM별 VM runner process 분리 — 권고
 
 ```text
 Application
     -> libpvm-client
         -> Unix SOCK_SEQPACKET
             -> pvmd (인증·정책·상태·감시)
-                ├─ pvm-worker camera -> private KVM backend -> /dev/kvm
-                └─ pvm-worker ai     -> private KVM backend -> /dev/kvm
+                ├─ pvm-runner camera -> private KVM backend -> /dev/kvm
+                └─ pvm-runner ai     -> private KVM backend -> /dev/kvm
 ```
 
-`pvmd`는 control plane만 소유하고 각 VM의 KVM FD, memory, vCPU는 별도 `pvm-worker`
-process가 소유한다. `pidfd` 또는 `SIGCHLD`로 worker 종료를 감지한다.
+`pvmd`는 control plane만 소유하고 각 VM의 KVM FD, memory, vCPU는 별도 `pvm-runner`
+process가 소유한다. `pidfd` 또는 `SIGCHLD`로 VM runner 종료를 감지한다.
 
 - 장점: Application에서 KVM을 완전히 분리하고 VM별 process fault domain을 제공한다.
 - 장점: Phase 07의 Camera 강제 종료 후 AI와 manager 생존을 구조적으로 검증할 수 있다.
-- 장점: worker별 UID, capability, `rlimit` 및 향후 cgroup을 적용할 수 있어 최소 권한과 자원
+- 장점: VM runner별 UID, capability, `rlimit` 및 향후 cgroup을 적용할 수 있어 최소 권한과 자원
   상한을 VM 단위로 확장할 수 있다.
-- 단점: controller-worker IPC, 상태 동기화, timeout과 비정상 종료 rollback을 별도로
+- 단점: controller-VM runner IPC, 상태 동기화, timeout과 비정상 종료 rollback을 별도로
   구현해야 한다.
-- 단점: worker process별 page table, stack, FD와 context switch 비용이 추가된다.
+- 단점: VM runner process별 page table, stack, FD와 context switch 비용이 추가된다.
 - Phase 07 적합성: 기존 완료 조건과 이후 장치 backend 확장에 가장 잘 맞는다.
 
 ### 두 안의 장점·단점과 trade-off
 
-| 비교 기준 | 안 A: 단일 daemon | 안 B: daemon + worker | 선택에 따른 trade-off |
+| 비교 기준 | 안 A: 단일 daemon | 안 B: daemon + VM runner | 선택에 따른 trade-off |
 |---|---|---|---|
-| 장애 격리 | daemon fault가 모든 VM에 전파 | VM worker fault를 해당 VM에 한정 | B는 격리를 얻는 대신 감시·복구 로직이 증가 |
-| 상태 일관성 | 상태와 KVM 객체가 같은 주소 공간에 있어 즉시 일관 | controller 상태와 worker 실제 상태가 잠시 다를 수 있음 | A는 단순성, B는 timeout·sequence 기반 동기화 필요 |
+| 장애 격리 | daemon fault가 모든 VM에 전파 | VM runner fault를 해당 VM에 한정 | B는 격리를 얻는 대신 감시·복구 로직이 증가 |
+| 상태 일관성 | 상태와 KVM 객체가 같은 주소 공간에 있어 즉시 일관 | controller 상태와 VM runner 실제 상태가 잠시 다를 수 있음 | A는 단순성, B는 timeout·sequence 기반 동기화 필요 |
 | 구현·시험 난이도 | thread 동기화와 KVM backend에 집중 | 내부 protocol, spawn, reap, reconnect 오류까지 시험 | B의 초기 구현·negative test 범위가 더 큼 |
 | 자원 효율 | process 하나로 memory와 FD overhead가 작음 | VM마다 process 기본 비용이 추가 | 소수 pVM에서는 B의 비용이 작지만 VM 수 증가 시 누적 |
 | 제어 지연 | 내부 함수 호출로 가장 짧음 | lifecycle 명령마다 내부 IPC 한 번 이상 추가 | data path가 아닌 control path라 Phase 07에서는 영향이 작음 |
-| 권한 분리 | daemon 하나가 전체 KVM 권한 보유 | controller와 worker 권한을 역할별로 축소 가능 | B가 least privilege 설계에 유리하지만 설정이 복잡 |
-| 자원 회수 | daemon 종료 시 모든 VM FD가 한꺼번에 닫힘 | worker 종료 시 해당 VM FD만 독립적으로 닫힘 | B가 VM별 회수와 장애 주입 증명에 유리 |
-| 운영 관찰성 | thread와 VM 로그가 한 process에 섞임 | worker PID, exit status와 VM별 로그가 분리 | B가 원인 추적에 유리하나 로그 correlation ID 필요 |
-| 확장성 | backend 추가가 daemon 안정성에 직접 영향 | backend 또는 VM 유형을 worker 단위로 격리 가능 | 이후 장치 backend까지 고려하면 B가 변경 영향 축소 |
-| Phase 07 증거력 | 기능 성공은 확인 가능 | Camera worker kill 뒤 AI와 controller 생존을 직접 확인 | B가 장애 격리 완료 조건에 더 강한 증거 제공 |
+| 권한 분리 | daemon 하나가 전체 KVM 권한 보유 | controller와 VM runner 권한을 역할별로 축소 가능 | B가 least privilege 설계에 유리하지만 설정이 복잡 |
+| 자원 회수 | daemon 종료 시 모든 VM FD가 한꺼번에 닫힘 | VM runner 종료 시 해당 VM FD만 독립적으로 닫힘 | B가 VM별 회수와 장애 주입 증명에 유리 |
+| 운영 관찰성 | thread와 VM 로그가 한 process에 섞임 | VM runner PID, exit status와 VM별 로그가 분리 | B가 원인 추적에 유리하나 로그 correlation ID 필요 |
+| 확장성 | backend 추가가 daemon 안정성에 직접 영향 | backend 또는 VM 유형을 VM runner 단위로 격리 가능 | 이후 장치 backend까지 고려하면 B가 변경 영향 축소 |
+| Phase 07 증거력 | 기능 성공은 확인 가능 | Camera VM runner kill 뒤 AI와 controller 생존을 직접 확인 | B가 장애 격리 완료 조건에 더 강한 증거 제공 |
 
 안 A는 구현 기간과 구성 요소 수를 최소화하는 데 유리하다. 관리 대상이 하나이고 backend를
 신뢰할 수 있으며 process 전체 재시작을 허용한다면 합리적이다. 안 B는 구현 복잡도와 소량의
@@ -160,21 +179,21 @@ process가 소유한다. `pidfd` 또는 `SIGCHLD`로 worker 종료를 감지한�
 Phase 07은 두 pVM 동시 운용과 한 pVM 장애 후 생존을 완료 조건으로 삼으므로 **안 B를
 권고**한다.
 
-## 7. workload/backend 이관 후보
+## 8. guest image와 KVM backend 이관 후보
 
 관리 방식과 별도로 현재 selftest 결합을 어느 수준까지 해소할지 결정해야 한다.
 
 | 안 | 내용 | 장점 | 한계 |
 |---|---|---|---|
-| W1 | worker가 기존 `pkvm.bin`을 그대로 exec하는 adapter | 가장 빠르게 기존 결과 재사용 | 프레임워크가 VM 객체를 소유하지 않아 핵심 목적을 부분 충족 |
-| W2 | 최소 protected VM runner를 C backend로 분리하고 test payload를 로드 | ioctl 캡슐화와 실제 VM 상태 관리가 성립 | selftest helper 의존을 private 영역에 격리해야 함 |
-| W3 | Linux-capable VMM(kvmtool 계열)을 backend로 연결 | 이후 일반 guest workload에 유리 | Phase 07 범위를 크게 넘고 장치/boot protocol 구현 부담이 큼 |
+| W1 | controller가 기존 `pkvm.bin`을 legacy VM runner로 그대로 시작 | 가장 빠르게 기존 결과 재사용 | 프레임워크가 VM 객체를 소유하지 않아 핵심 목적을 부분 충족 |
+| W2 | 최소 protected VM 실행 로직을 `pvm-runner`와 C backend로 분리하고 test guest image를 적재 | ioctl 캡슐화와 실제 VM 상태 관리가 성립 | selftest helper 의존을 private 영역에 격리해야 함 |
+| W3 | Linux-capable VMM(kvmtool 계열)을 VM runner backend로 연결하고 Linux guest image를 적재 | 이후 일반 Linux guest에 유리 | Phase 07 범위를 크게 넘고 장치·boot protocol 구현 부담이 큼 |
 
-**권고는 W2**다. Phase 07에서는 작은 test payload로 lifecycle을 검증하고, public API는
+**권고는 W2**다. Phase 07에서는 작은 test guest image로 lifecycle을 검증하고, public API는
 backend 중립적으로 설계하여 W3를 후속 backend로 추가할 수 있게 한다. W1은 전환 중 대조군
 용도로만 유지한다.
 
-## 8. 권고 기준 설계 초안
+## 9. 권고 기준 설계 초안
 
 안 B와 W2를 선택할 경우 모듈 경계는 다음과 같다.
 
@@ -183,7 +202,7 @@ backend 중립적으로 설계하여 W3를 후속 backend로 추가할 수 있�
 | `include/pvm/pvm.h` | 공개 | Application용 create/start/status/stop/list API와 오류 코드 |
 | `lib/pvm_client.c` | 공개 library | 요청 직렬화, socket 연결, 응답 검증 |
 | `daemon/pvmd.c` | 비공개 | peer credential 인증, policy, instance registry, 상태 전이 |
-| `worker/pvm_worker.c` | 비공개 | VM별 process entry, backend 호출, 상태/종료 결과 보고 |
+| `runner/pvm_runner.c` | 비공개 | VM별 runner process entry, backend 호출, 상태/종료 결과 보고 |
 | `backend/pvm_kvm_arm64.c` | 비공개 | `/dev/kvm`, protected VM/vCPU/memory/ioctl 순서와 rollback |
 | `common/protocol.h` | 내부 공유 | versioned fixed-size IPC message와 크기 상한 |
 | `cli/pvmctl.c` | 공개 도구 | 수동 검증과 운영 진단용 CLI; client library만 사용 |
@@ -201,40 +220,40 @@ NEW -> VERIFIED -> CREATED -> RUNNING -> STOPPING -> STOPPED
    +-------+----------+----------+------------> FAILED
 ```
 
-## 9. Phase 07 재검증 매핑
+## 10. Phase 07 재검증 매핑
 
 | 기존 검증 | 새 프레임워크 검증 |
 |---|---|
 | 요청 파일 UID 65534 거부 | 비인가 client의 socket 연결/CREATE 거부 |
-| 변조 `pkvm.bin` 거부 | 변조 workload manifest 검증 실패 |
-| PID와 KVM FD 3개 이상 | API state=RUNNING 및 worker의 VM/vCPU FD 보유 확인 |
-| STOP 요청 | client API STOP 후 STOPPED와 FD/worker 회수 확인 |
-| Camera `SIGKILL` | Camera worker kill 후 FAILED, AI RUNNING, pvmd 응답 확인 |
-| AI selftest 완료 | AI worker의 guest completion/result event 확인 |
+| 변조 `pkvm.bin` 거부 | 변조 guest image의 manifest 검증 실패 |
+| PID와 KVM FD 3개 이상 | API state=RUNNING 및 VM runner의 VM/vCPU FD 보유 확인 |
+| STOP 요청 | client API STOP 후 STOPPED와 FD/VM runner 회수 확인 |
+| Camera `SIGKILL` | Camera VM runner kill 후 FAILED, AI RUNNING, `pvmd` 응답 확인 |
+| AI selftest 완료 | AI VM runner의 guest code 완료 event 확인 |
 | `Mlocked: 0 kB` | 전체 destroy 뒤 기존 기준을 동일하게 확인 |
 
 shell script는 cross-build, initramfs 생성, QEMU 시작과 최종 마커 수집에만 남긴다. Phase 07의
 실제 요청, 인증, 정책, VM 상태 전이와 lifecycle 검증 로직은 C API와 C test application으로
 이관한다.
 
-## 10. 사용자 결정이 필요한 항목
+## 11. 사용자 결정이 필요한 항목
 
 ### D07-F1. process 구조
 
 - A: 단일 daemon + VM thread
-- B: controller daemon + VM별 worker process (**권고**)
+- B: controller daemon + VM별 VM runner process (**권고**)
 
 ### D07-F2. 초기 backend 범위
 
-- W1: 기존 selftest exec adapter
-- W2: 최소 protected VM C runner로 분리 (**권고**)
-- W3: 처음부터 Linux-capable VMM backend
+- W1: 기존 legacy selftest executable을 VM runner로 시작
+- W2: 최소 protected VM 실행 로직을 `pvm-runner`와 C backend로 분리 (**권고**)
+- W3: 처음부터 Linux-capable VM runner backend
 
 ### D07-F3. daemon 재시작 복구 수준
 
-- R1: 이번 PoC에서는 daemon 생존 중 lifecycle만 보장하고 재시작 시 남은 worker를 정리
+- R1: 이번 PoC에서는 daemon 생존 중 lifecycle만 보장하고 재시작 시 남은 VM runner를 정리
   (**권고**)
-- R2: daemon 재시작 후 기존 worker에 재연결하여 관리 지속
+- R2: daemon 재시작 후 기존 VM runner에 재연결하여 관리 지속
 
 ### D07-F4. 초기 public interface
 
@@ -246,12 +265,12 @@ shell script는 cross-build, initramfs 생성, QEMU 시작과 최종 마커 수�
 Phase 07 장애 격리를 실제 process boundary로 재검증하고, 영구 복구나 full Linux VMM 때문에
 초기 범위가 과도하게 커지는 것을 피한다.
 
-## 11. 결정 후 작업 순서
+## 12. 결정 후 작업 순서
 
 1. 선택 결과로 기능·비기능 요구사항의 **제안** 항목을 확정하거나 제외한다.
 2. public C API, IPC protocol, 상태 머신, 오류·rollback 상세 설계를 작성한다.
 3. Host 단위 시험이 가능한 protocol/policy/state 모듈을 먼저 구현한다.
-4. arm64 protected KVM backend와 worker를 구현한다.
+4. arm64 protected KVM backend와 VM runner를 구현한다.
 5. 기존 shell lifecycle test를 C test application으로 대체한다.
 6. clang kernel 기반 E-1 QEMU에서 Phase 07 완료 조건 전체를 다시 실측한다.
 7. 성공 로그와 한계를 Phase 07 README에 반영하고 완료 조건 충족 시 커밋·push한다.
