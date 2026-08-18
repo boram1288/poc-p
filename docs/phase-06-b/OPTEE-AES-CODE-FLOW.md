@@ -66,6 +66,8 @@ sequenceDiagram
 
 ## 3. Host 호출 시퀀스
 
+> 옅은 빨간 배경은 guest 호출 시퀀스와 달라지는 Host 전용 구간이다.
+
 ```mermaid
 sequenceDiagram
     autonumber
@@ -79,7 +81,7 @@ sequenceDiagram
         participant OD as OP-TEE FF-A driver
         participant FD as ARM FF-A driver
     end
-    box EL2
+    box rgb(255, 225, 225) EL2 · Host 전용
         participant PH as pKVM host FF-A proxy
     end
     box EL3
@@ -96,23 +98,29 @@ sequenceDiagram
     HL->>TC: ioctl(TEE_IOC_OPEN_SESSION)
     TC->>OD: optee_open_session()
     OD->>OD: OPTEE_MSG_CMD_OPEN_SESSION 작성
-    OD->>FD: 필요 시 memory_share(msg_arg pages)
-    FD->>PH: SMC FFA_MEM_SHARE, sender=0
-    PH->>SP: 검증·page-state 전환 후 SMC 전달
-    SP->>OS: shared-memory handle 등록
+    rect rgb(255, 225, 225)
+        OD->>FD: 필요 시 memory_share(msg_arg pages)
+        FD->>PH: SMC FFA_MEM_SHARE, sender=0
+        PH->>SP: 검증·page-state 전환 후 SMC 전달
+        SP->>OS: shared-memory handle 등록
+    end
     OD->>FD: sync_send_receive(WITH_ARG, handle, offset)
-    FD->>PH: SMC FFA_MSG_SEND_DIRECT_REQ, src=0
-    PH->>PH: kvm_host_ffa_handler() / source ID 검사
-    PH->>SP: do_ffa_direct_msg() → SMC
-    SP->>OS: OP-TEE logical partition direct request
-    OS->>OS: virt_set_guest(0) → handle_yielding_call()
+    rect rgb(255, 225, 225)
+        FD->>PH: SMC FFA_MSG_SEND_DIRECT_REQ, src=0
+        PH->>PH: kvm_host_ffa_handler() / source ID 검사
+        PH->>SP: do_ffa_direct_msg() → SMC
+        SP->>OS: OP-TEE logical partition direct request
+        OS->>OS: virt_set_guest(0) → handle_yielding_call()
+    end
     OS->>OS: tee_entry_std(OPEN_SESSION)
     opt REE filesystem TA가 아직 적재되지 않음
-        OS-->>OD: OPTEE_RPC_CMD_LOAD_TA
-        OD-->>HS: TEE_IOC_SUPPL_RECV
-        HS->>HS: TEECI_LoadSecureModule(TA UUID)
-        HS-->>OD: TA binary
-        OD-->>OS: YIELDING_CALL_RESUME
+        rect rgb(255, 225, 225)
+            OS-->>OD: OPTEE_RPC_CMD_LOAD_TA
+            OD-->>HS: Host TEE_IOC_SUPPL_RECV
+            HS->>HS: Host rootfs에서 TA binary 탐색
+            HS-->>OD: TA binary
+            OD-->>OS: YIELDING_CALL_RESUME (Host endpoint 0)
+        end
     end
     OS->>TA: TA_OpenSessionEntryPoint()
     TA-->>HA: session ID / TEEC_SUCCESS
@@ -123,10 +131,12 @@ sequenceDiagram
         TC->>OD: optee_invoke_func()
         OD->>OD: OPTEE_MSG_CMD_INVOKE_COMMAND 작성
         OD->>FD: direct request(WITH_ARG, shared-memory handle)
-        FD->>PH: SMC FFA_MSG_SEND_DIRECT_REQ, src=0
-        PH->>SP: Host endpoint 검증 후 전달
-        SP->>OS: direct request
-        OS->>OS: virt_set_guest(0) → tee_entry_std(INVOKE)
+        rect rgb(255, 225, 225)
+            FD->>PH: SMC FFA_MSG_SEND_DIRECT_REQ, src=0
+            PH->>SP: Host endpoint 검증 후 전달
+            SP->>OS: direct request
+            OS->>OS: virt_set_guest(0) → tee_entry_std(INVOKE)
+        end
         OS->>TA: TA_InvokeCommandEntryPoint(cmd)
         TA-->>HA: 결과 / output memref
     end
@@ -135,11 +145,15 @@ sequenceDiagram
     HL->>TC: ioctl(TEE_IOC_CLOSE_SESSION)
     TC->>OD: OPTEE_MSG_CMD_CLOSE_SESSION
     OD->>FD: direct request
-    FD->>PH: SMC, src=0
-    PH->>SP: 전달
+    rect rgb(255, 225, 225)
+        FD->>PH: SMC, src=0
+        PH->>SP: Host endpoint로 전달
+    end
     SP->>OS: close session
     OS->>TA: TA_CloseSessionEntryPoint()
-    Note over HL,PH: temporary memref 해제 시 unregister / FFA_MEM_RECLAIM<br/>msg_arg cache는 재사용 후 pool teardown에서 회수 가능
+    rect rgb(255, 225, 225)
+        Note over HL,PH: temporary memref 해제 시 unregister / FFA_MEM_RECLAIM<br/>Host msg_arg cache는 재사용 후 pool teardown에서 회수 가능
+    end
 ```
 
 Host FF-A call은 `ffa_transport_init()`이 선택한 SMC conduit를 사용한다. EL2의
@@ -148,6 +162,8 @@ SMC를 실행한다. OP-TEE에서는 physical Normal World endpoint `0`도 virtu
 만들어 Host session을 guest session과 분리한다.
 
 ## 4. protected pVM guest 호출 시퀀스
+
+> 옅은 빨간 배경은 Host 호출 시퀀스와 달라지는 guest 전용 구간이다.
 
 ```mermaid
 sequenceDiagram
@@ -162,7 +178,7 @@ sequenceDiagram
         participant GO as guest OP-TEE FF-A driver
         participant GF as guest ARM FF-A driver
     end
-    box EL2
+    box rgb(255, 225, 225) EL2 · guest 전용
         participant PG as pKVM guest FF-A proxy
     end
     box EL3
@@ -173,33 +189,41 @@ sequenceDiagram
         participant TA as guest-context AES TA
     end
 
-    Note over PG: VMM이 SET_FFA capability로 virtual FF-A instance 활성화
+    rect rgb(255, 225, 225)
+        Note over PG: VMM이 SET_FFA capability로 virtual FF-A instance 활성화
+    end
     GA->>GL: TEEC_InitializeContext()
     GL->>GT: guest /dev/tee0 open
     GA->>GL: TEEC_OpenSession(TA_AES_UUID)
     GL->>GT: ioctl(TEE_IOC_OPEN_SESSION)
     GT->>GO: optee_open_session()
-    GO->>GF: 필요 시 memory_share(msg_arg / tempref pages)
-    GF->>PG: HVC FFA_MEM_SHARE, src=guest endpoint
-    PG->>PG: guest IPA→PA 변환, ownership와 endpoint 검사
-    PG->>SP: SMC FFA_MEM_SHARE로 대리 전달
-    SP->>OS: guest endpoint 소유 shared-memory handle
+    rect rgb(255, 225, 225)
+        GO->>GF: 필요 시 memory_share(msg_arg / tempref pages)
+        GF->>PG: HVC FFA_MEM_SHARE, src=guest endpoint
+        PG->>PG: guest IPA→PA 변환, ownership와 endpoint 검사
+        PG->>SP: SMC FFA_MEM_SHARE로 대리 전달
+        SP->>OS: guest endpoint 소유 shared-memory handle
+    end
     GO->>GF: direct request(WITH_ARG, handle, offset)
-    GF->>PG: HVC FFA_MSG_SEND_DIRECT_REQ
-    PG->>PG: kvm_guest_ffa_handler()
-    PG->>PG: src == hyp_vcpu_to_ffa_handle() 검사
-    PG->>SP: do_ffa_direct_msg() → SMC
-    SP->>OS: sender_id를 보존한 direct request
-    OS->>OS: virt_set_guest(sender_id)
-    OS->>OS: guest별 MMU/runtime context 선택
+    rect rgb(255, 225, 225)
+        GF->>PG: HVC FFA_MSG_SEND_DIRECT_REQ
+        PG->>PG: kvm_guest_ffa_handler()
+        PG->>PG: src == hyp_vcpu_to_ffa_handle() 검사
+        PG->>SP: do_ffa_direct_msg() → SMC
+        SP->>OS: sender_id를 보존한 direct request
+        OS->>OS: virt_set_guest(sender_id)
+        OS->>OS: guest별 MMU/runtime context 선택
+    end
     OS->>OS: tee_entry_std(OPEN_SESSION)
     opt guest context에서 TA 적재 필요
-        OS-->>GO: OPTEE_RPC_CMD_LOAD_TA
-        GO-->>GS: guest TEE_IOC_SUPPL_RECV
-        GS->>GS: guest rootfs에서 TA binary 탐색
-        GS-->>GO: TA binary
-        GO-->>PG: HVC YIELDING_CALL_RESUME
-        PG-->>OS: guest sender_id로 resume
+        rect rgb(255, 225, 225)
+            OS-->>GO: OPTEE_RPC_CMD_LOAD_TA
+            GO-->>GS: guest TEE_IOC_SUPPL_RECV
+            GS->>GS: guest rootfs에서 TA binary 탐색
+            GS-->>GO: TA binary
+            GO-->>PG: HVC YIELDING_CALL_RESUME
+            PG-->>OS: guest sender_id로 resume
+        end
     end
     OS->>TA: TA_OpenSessionEntryPoint()
     TA-->>GA: guest 전용 session ID / TEEC_SUCCESS
@@ -209,10 +233,12 @@ sequenceDiagram
         GL->>GT: ioctl(TEE_IOC_INVOKE)
         GT->>GO: optee_invoke_func()
         GO->>GF: direct request(WITH_ARG, shared-memory handle)
-        GF->>PG: HVC, src=guest endpoint
-        PG->>SP: endpoint·handle·page-state 검사 후 SMC
-        SP->>OS: direct request
-        OS->>OS: virt_set_guest(sender_id)
+        rect rgb(255, 225, 225)
+            GF->>PG: HVC, src=guest endpoint
+            PG->>SP: endpoint·handle·page-state 검사 후 SMC
+            SP->>OS: direct request
+            OS->>OS: virt_set_guest(sender_id)
+        end
         OS->>TA: TA_InvokeCommandEntryPoint(cmd)
         TA-->>GA: 해당 guest shared memory로 결과 반환
     end
@@ -221,11 +247,15 @@ sequenceDiagram
     GL->>GT: ioctl(TEE_IOC_CLOSE_SESSION)
     GT->>GO: OPTEE_MSG_CMD_CLOSE_SESSION
     GO->>GF: direct request
-    GF->>PG: HVC, src=guest endpoint
-    PG->>SP: 전달
-    SP->>OS: guest context session close
+    rect rgb(255, 225, 225)
+        GF->>PG: HVC, src=guest endpoint
+        PG->>SP: guest endpoint로 전달
+        SP->>OS: guest context session close
+    end
     OS->>TA: TA_CloseSessionEntryPoint()
-    Note over GL,PG: temporary memref 해제 시 unregister / FFA_MEM_RECLAIM<br/>guest/Secure World share와 page-state 복원
+    rect rgb(255, 225, 225)
+        Note over GL,PG: temporary memref 해제 시 unregister / FFA_MEM_RECLAIM<br/>guest/Secure World share와 page-state 복원
+    end
 ```
 
 VMM은 `KVM_CAP_ARM_PROTECTED_VM_FLAGS_SET_FFA`를 먼저 설정한다. 이후 guest FF-A call은
