@@ -311,13 +311,13 @@ Trusted Access를 요구하지 않는 현재 범위에서 Phase 06-B 완료조�
 따라서 이 범위의 Phase 완료조건은 충족했다. 변경 문서와 소스의 최종 검토 후 완료 커밋과
 upstream push를 수행한다.
 
-### 다음 확인 순서
+### 완료된 확인 결과
 
-후속 작업은 한 항목씩 다음 순서로 확인한다.
+다음 항목을 순서대로 실측했으며 모두 통과했다.
 
-1. FF-A pVM teardown과 Host AES 동시 실행을 panic 없이 통과시킨다.
-2. Linux pVM의 표준 OP-TEE client와 정확한 4 KiB TA 호출을 검증한다.
-3. 잘못된 FF-A 요청 거부, private page Host 접근 차단, 세션·공유 메모리 회수를 확인한다.
+1. FF-A pVM teardown과 Host AES 동시 실행을 panic 없이 통과했다.
+2. Linux pVM의 표준 OP-TEE client와 정확한 4 KiB TA 호출을 검증했다.
+3. 잘못된 FF-A 요청 거부, private page Host 접근 차단, 세션·공유 메모리 회수를 확인했다.
 
 ## 완료 조건
 
