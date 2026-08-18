@@ -175,6 +175,10 @@ E-3는 에뮬레이션 환경이다. E-3에서 DMA 격리가 성립해도 실제
 
 장치 할당 성공은 실제 카메라 캡처나 GPU 가속이 성립한다는 뜻이 아니다.
 
+현재 QEMU `edu` PoC descriptor로 PV IOMMU 초기화와 `Found 1 assignable devices`까지
+실측했다. EL2 device reset callback, pVM MMIO mapping, DMA 정상/위반 대조군은 아직
+완료되지 않았다.
+
 pKVM의 DMA 격리는 upstream 미머지 RFC에 의존한다. 이 Phase의 결과는 특정 시점의 개발
 브랜치에 대한 것이며, upstream 병합 결과와 다를 수 있다. 사용한 커밋 SHA를 결과 문서에
 반드시 기록한다.

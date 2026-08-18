@@ -19,7 +19,7 @@ TIMEOUT=${2:-600}
 
 mkdir -p "${OUTPUT_DIR}"
 
-MACHINE="virt,virtualization=on,gic-version=3,iommu=smmuv3"
+MACHINE=${MACHINE:-virt,virtualization=on,gic-version=3,iommu=smmuv3}
 CPU="max"
 SMP=2
 MEM=2G
@@ -33,6 +33,8 @@ MEM=2G
 # `0x609` 를 그대로 넘기면 파싱에 실패하고 파라미터가 무시된다.
 # 값은 요구량 1545에 여유를 더한 2048이다.
 HYP_IOMMU_PAGES=${HYP_IOMMU_PAGES:-2048}
+QEMU_EXTRA_ARGS=${QEMU_EXTRA_ARGS:-}
+read -r -a QEMU_EXTRA_ARGV <<< "${QEMU_EXTRA_ARGS}"
 
 CMDLINE="console=ttyAMA0 kvm-arm.mode=protected earlycon rdinit=/init"
 if [ -n "${HYP_IOMMU_PAGES}" ]; then
@@ -57,6 +59,7 @@ timeout --signal=KILL ${TIMEOUT} ${QEMU} \
     -kernel ${KERNEL} \
     -initrd ${INITRD} \
     -append "${CMDLINE}" \
+    "${QEMU_EXTRA_ARGV[@]}" \
     > ${LOG} 2>&1
 
 RC=$?

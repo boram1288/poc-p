@@ -176,6 +176,32 @@ kvm-arm-smmu-v3 9050000.smmuv3: allocated 32768 entries for evtq
 PV 전용 설계에서 제거하며, 다음 blocker는 `pkvm,device-assignment` DT 노드와 실제
 IOMMU endpoint를 가진 할당 대상 device 작성이다.
 
+### QEMU edu assignable device (2026-08-18)
+
+QEMU `virt`에 `pkvm-edu-assignment=on` 옵션을 추가해 PCI `edu` 장치의 고정 BAR0와
+Requester ID를 `pkvm,device-assignment` DT descriptor로 전달했다. descriptor node는
+Linux platform device로 생성되지 않도록 `status="disabled"`로 두어 실제 PCI endpoint와
+Stream ID가 중복 등록되지 않게 했다.
+
+```bash
+MACHINE='virt,virtualization=on,gic-version=3,iommu=smmuv3,pkvm-edu-assignment=on' \
+QEMU_EXTRA_ARGS='-device edu,addr=2' \
+HYP_IOMMU_PAGES=4096 \
+work/src/tools/qemu/run-e3.sh \
+    work/build/pkvm-qemu/console-e3-pv-edu-assignment3.log 600
+```
+
+실측 결과 PV IOMMU 초기화, PCI endpoint의 IOMMU group 편입, assignable device 등록이
+모두 성공했다.
+
+```text
+pci 0000:00:02.0: Adding to iommu group 2
+kvm [1]: Found 1 assignable devices
+```
+
+QEMU 소스 커밋은 `2ebc078`이며 로컬 branch는 `boram1288/phase08-pkvm-edu`다. 다음
+단계는 EL2 reset callback과 Phase 07 runner의 device MMIO mapping을 연결하는 것이다.
+
 H-6 채택은 유지한다. QEMU가 SMMUv3를 제공하고 pKVM이 protected로 부팅하는 것까지는
 확인됐다. 다만 조사 단계에서 기록하지 못한 두 개의 선행 작업이 드러났다.
 
