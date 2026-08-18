@@ -199,8 +199,9 @@ pci 0000:00:02.0: Adding to iommu group 2
 kvm [1]: Found 1 assignable devices
 ```
 
-QEMU 소스 커밋은 `2ebc078`이며 로컬 branch는 `boram1288/phase08-pkvm-edu`다. 다음
-단계는 EL2 reset callback과 Phase 07 runner의 device MMIO mapping을 연결하는 것이다.
+QEMU 소스 커밋은 [`2ebc078`](https://github.com/boram1288/qemu/commit/2ebc078)이며
+branch는 `boram1288/phase08-pkvm-edu`다. 다음 단계는 EL2 reset callback과 Phase 07
+runner의 device MMIO mapping을 연결하는 것이다.
 
 H-6 채택은 유지한다. QEMU가 SMMUv3를 제공하고 pKVM이 protected로 부팅하는 것까지는
 확인됐다. 다만 조사 단계에서 기록하지 못한 두 개의 선행 작업이 드러났다.
