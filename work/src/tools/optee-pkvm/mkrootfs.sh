@@ -9,6 +9,8 @@ OUTPUT_DIR=${OUTPUT_DIR:-${PROJECT_ROOT}/work/build/optee-pkvm}
 SOURCE_ROOT=${SOURCE_ROOT:-${SOURCE_DIR}/out-br/target}
 PKVM=${PKVM:-${PROJECT_ROOT}/work/build/pkvm-pvm/kselftest-build/arm64/pkvm}
 KERNEL=${KERNEL:-${PROJECT_ROOT}/work/build/pkvm-full-clang/arch/arm64/boot/Image}
+LKVM=${LKVM:-${PROJECT_ROOT}/work/src/kvmtool/lkvm}
+GUEST_ROOTFS=${GUEST_ROOTFS:-${PROJECT_ROOT}/work/build/optee-pkvm-guest/rootfs-optee-pkvm-guest.cpio.gz}
 ROOT_DIR=${OUTPUT_DIR}/initramfs-root
 OUT=${OUTPUT_DIR}/rootfs-optee-pkvm.cpio.gz
 UIMAGE=${OUTPUT_DIR}/uImage
@@ -18,6 +20,8 @@ MKIMAGE=${SOURCE_DIR}/u-boot/tools/mkimage
 test -d "${SOURCE_ROOT}/etc/init.d"
 test -x "${PKVM}"
 test -f "${KERNEL}"
+test -x "${LKVM}"
+test -f "${GUEST_ROOTFS}"
 test -x "${MKIMAGE}"
 mkdir -p "${OUTPUT_DIR}"
 rm -rf "${ROOT_DIR}"
@@ -26,6 +30,10 @@ mkdir -p "${ROOT_DIR}"
 cp -a "${SOURCE_ROOT}/." "${ROOT_DIR}/"
 install -m 755 "${SCRIPT_DIR}/init.sh" "${ROOT_DIR}/init"
 install -m 755 "${PKVM}" "${ROOT_DIR}/usr/bin/pkvm"
+install -m 755 "${LKVM}" "${ROOT_DIR}/usr/bin/lkvm"
+mkdir -p "${ROOT_DIR}/opt/pvm"
+install -m 644 "${KERNEL}" "${ROOT_DIR}/opt/pvm/Image"
+install -m 644 "${GUEST_ROOTFS}" "${ROOT_DIR}/opt/pvm/rootfs.cpio.gz"
 install -m 755 "${SCRIPT_DIR}/coexist-test.sh" \
 	"${ROOT_DIR}/usr/bin/optee-pkvm-coexist"
 

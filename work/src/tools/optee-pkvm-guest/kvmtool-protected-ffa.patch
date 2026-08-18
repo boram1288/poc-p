@@ -1,0 +1,41 @@
+diff --git a/arm64/include/kvm/kvm-config-arch.h b/arm64/include/kvm/kvm-config-arch.h
+index 0a6f5d5..0000000 100644
+--- a/arm64/include/kvm/kvm-config-arch.h
++++ b/arm64/include/kvm/kvm-config-arch.h
+@@ -20,6 +20,7 @@ struct kvm_config_arch {
+ 	bool		guest_memfd;
++	bool		protected_ffa;
+ };
+@@ -75,6 +76,8 @@ int sve_vl_parser(const struct option *opt, const char *arg, int unset);
+ 	OPT_BOOLEAN('\0', "guest-memfd", &(cfg)->guest_memfd,\
+ 			"Use guest_memfd to back guest RAM"),
++	OPT_BOOLEAN('\0', "protected-ffa", &(cfg)->protected_ffa,\
++			"Expose the pKVM virtual FF-A instance to a protected VM"),
+diff --git a/arm64/kvm.c b/arm64/kvm.c
+index 2bf3a52..0000000 100644
+--- a/arm64/kvm.c
++++ b/arm64/kvm.c
+@@ -18,6 +18,13 @@
++#ifndef KVM_CAP_ARM_PROTECTED_VM
++#define KVM_CAP_ARM_PROTECTED_VM		0xffbadab1
++#endif
++#ifndef KVM_CAP_ARM_PROTECTED_VM_FLAGS_SET_FFA
++#define KVM_CAP_ARM_PROTECTED_VM_FLAGS_SET_FFA	2
++#endif
++
+ static struct arm64_image_header *kernel_header;
+@@ -164,6 +171,19 @@ static void kvm__arch_set_counter_offset(struct kvm *kvm)
++	if (kvm->cfg.arch.protected_ffa) {
++		struct kvm_enable_cap cap = {
++			.cap = KVM_CAP_ARM_PROTECTED_VM,
++			.flags = KVM_CAP_ARM_PROTECTED_VM_FLAGS_SET_FFA,
++			.args[0] = 1,
++		};
++
++		if (!kvm->cfg.arch.protected)
++			die("--protected-ffa requires --protected");
++		if (ioctl(kvm->vm_fd, KVM_ENABLE_CAP, &cap))
++			die_perror("KVM_ENABLE_CAP(SET_FFA)");
++	}
++
+ 	/* Create the virtual GIC. */

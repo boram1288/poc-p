@@ -2,11 +2,22 @@
 
 - 상태: 진행 중 — FF-A 선행 경로 오류 분석 필요
 - 목적: pVM 내부 애플리케이션이 Secure World의 OP-TEE TA를 호출하고, 호출 데이터가 비신뢰 Host에 노출되지 않는 경로를 검증한다.
+- 검증 방식: 별도의 Trusted Access, Secure World 메모리 덤프, 특권 디버그 인터페이스 없이
+  일반 Host/guest 콘솔과 KVM·FF-A·TEEC의 공개 반환값만 사용하는 블랙박스 PoC로 한정한다.
 - 환경: E-2 확장
 - 선행 Phase: Phase 06
 - 관련 목표: G-6 확장
 
 ## 배경
+
+### 범위 제한
+
+이 Phase의 목적은 pVM별 OP-TEE 호출 경로가 동작하고, 공개 인터페이스에서 잘못된 접근이
+거부되며 종료 뒤 자원이 회수되는지를 확인하는 것이다. 실제 하드웨어의 물리 공격 내성,
+제품 수준 키 보호, Secure World 내부 메모리의 직접 검사나 별도 Trusted Access 권한을
+요구하는 검증은 범위에 포함하지 않는다. 따라서 “Host 비노출”은 pKVM page-state 전환과
+Host 접근 fault, `kvm-arm.ffa-unmap-on-lend` 경로의 성공 및 공개 로그로 관찰 가능한
+reclaim 결과를 근거로 판정한다.
 
 Phase 06은 Host Linux에서 OP-TEE TA를 호출하는 동안 pVM이 함께 실행될 수 있음을 확인했다.
 그러나 TA client는 Host에서 실행되며, pVM 내부에서 OP-TEE 서비스를 직접 사용하는 경로는
@@ -52,6 +63,24 @@ pKVM이 pVM의 OP-TEE 또는 FF-A 호출을 EL2에서 중재하고, Secure World
 5. 게스트 Linux OP-TEE 드라이버에 필요한 DT 또는 ACPI 인터페이스
 
 ## 계획
+
+### 범위 축소: 표준 TEE client 경로
+
+본 Phase는 Trusted Access 또는 제품 전용 trusted-access 권한 모델을 요구하지 않는다.
+검증 대상은 protected Linux pVM 안의 일반 OP-TEE client가 FF-A 표준 호출과
+`TEEC_OpenSession()`/`TEEC_InvokeCommand()`로 TA를 사용하는 경로로 한정한다. 따라서
+키 프로비저닝, privileged TA, 다른 pVM의 세션 강제 탈취 같은 Trusted Access 전용
+기능은 이 Phase의 완료조건에서 제외하고, 접근 거부·메모리 회수·세션 종료 같은
+보안 경계만 실측한다.
+
+### 빌드 도구 체인 범위
+
+- Phase 06-B의 커널 빌드와 실측은
+  `work/build/pkvm-full-clang/arch/arm64/boot/Image`를 기준으로 한다.
+- `work/build/pkvm-full-gcc`는 Phase 02에서 수행한 GCC 교차 빌드 검증의 과거 산출물이며,
+  Phase 04 이후의 기본 실행 스크립트와 Phase 06-B 완료조건에서는 사용하지 않는다.
+- 저장 공간 확보를 위해 `pkvm-full-gcc`를 삭제했으며, 이 Phase에서는 GCC 재빌드나
+  Clang/GCC 교차 검증을 수행하지 않는다. 컴파일러 교차 검증은 완료 판정 범위 밖이다.
 
 1. Linux가 부팅되는 최소 pVM 이미지와 콘솔을 구성한다.
 2. pVM 이미지에 OP-TEE client, `libteec`, `tee-supplicant`와 최소 TA client를 포함한다.
@@ -139,44 +168,168 @@ SPMD와 OP-TEE SPMC 사이의 direct-message 계약 불일치를 먼저 해결�
 `FFA_ERROR_INVALID_PARAMETER`에 해당한다. 진단을 위한 pKVM, OP-TEE 및 build script의
 임시 소스 변경은 모두 원복했다. 위 로그는 재현 증거인 build 산출물로만 남겨 두었다.
 
+### 2026-08-18 후속 해결 및 pVM 최소 FF-A 실측
+
+위의 Host probe 실패는 pKVM FF-A proxy가 설치되기 전에 Linux FF-A driver가
+`FFA_VERSION`과 RX/TX map을 수행하던 init 순서 문제로 확정했다. FF-A driver를 late
+init으로 옮기고 `kvm-arm.ffa-unmap-on-lend`를 사용했으며, OP-TEE SPMC가 NW initiated
+`FFA_MEM_RETRIEVE_REQ`를 지원하지 않는 제약은 pKVM이 Host share constituent를 로컬에서
+추적해 reclaim하도록 보완했다.
+
+그 결과 `console-phase-06-b-fixed64.log`에서 다음 Host 기준선이 한 세션에서 통과했다.
+
+- `optee: initialized driver`
+- `COEX_AES_DURING_PVM_OK`
+- `COEX_PVM_OK: rc=0`
+- `COEX_AES_REOPEN_OK`
+- `Mlocked: 0 kB`
+- `OPTEE_PKVM_VALIDATION_OK`
+
+이어 protected VM에 `KVM_CAP_ARM_PROTECTED_VM_FLAGS_SET_FFA`를 적용했다. 이 과정에서
+공통 `KVM_ENABLE_CAP` 코드가 flags를 선행 거부해 protected VM 전용 분기에 도달하지
+못하는 문제를 수정했다. selftest HVC wrapper도 FF-A 1.2가 반환값으로 사용할 수 있는
+`x8`~`x17`을 clobber로 선언하도록 수정했다. 수정 후
+`console-phase-06-b-pvm-ffa-fixed.log`에서 pVM 내부 `FFA_VERSION(1.2)`와 `FFA_ID_GET`이
+모두 성공했고 `PVM_FFA_MINIMAL_OK`, `Guest done`, `All ok!`을 확인했다.
+
+최소 FF-A가 활성화된 pVM과 Host AES를 실제로 겹쳐 실행한 다음 단계에서는
+`console-phase-06-b-pvm-ffa-final.log`에 `COEX_KVM_ACTIVE: ... kvm_fds=6`까지 기록된 뒤,
+pVM teardown의 `__pkvm_host_reclaim_page_guest()`가
+`mem_protect.c:2229`에서 HYP panic을 일으켰다. 따라서 현재 최우선 문제는 FF-A가 활성화된
+pVM 종료와 동시 Host Secure share 사이의 page-state/reclaim 충돌이다.
+
+### Exception Level 기준 모듈뷰
+
+아래 그림은 현재 구현과 검증 경로를 Exception Level별로 나타낸다. 실선은 현재 호출 또는
+제어 경로이고, 점선은 빌드·부팅 설정이나 검증 관찰 경로다.
+
+```mermaid
+flowchart TB
+    subgraph EL0["NS-EL0 · Host 검증 프로세스"]
+        COEX["coexist-test.sh\n동시 실행·상태 관찰"]
+        AES["optee_example_aes\nHost TA client"]
+        VMM["pkvm selftest VMM\nKVM_CREATE_VM / SET_FFA"]
+    end
+
+    subgraph NS_EL1["NS-EL1 · Host Linux"]
+        KVMIO["KVM ioctl dispatch\narch/arm64/kvm/arm.c"]
+        FFAHOST["Linux FF-A transport\ndrivers/firmware/arm_ffa/driver.c"]
+        OPTEEDRV["OP-TEE FF-A driver"]
+        MEMPROTECT["Host/guest page-state reclaim\nmem_protect.c"]
+    end
+
+    subgraph PVM_EL1["NS-EL1 · Protected VM guest"]
+        PVMTEST["pVM guest selftest\nFFA_VERSION / FFA_ID_GET"]
+        GUESTTA["Guest Linux + OP-TEE client\n미구현"]
+    end
+
+    subgraph EL2["EL2 · pKVM nVHE Hypervisor"]
+        HYPFFA["FF-A proxy\nhandle·range·reclaim 관리"]
+        HYPVM["protected VM lifecycle\ncapability / teardown"]
+        HYPSTATE["Host/guest Stage-2 page state"]
+    end
+
+    subgraph SEL1["S-EL1 · Secure World"]
+        SPMC["OP-TEE 4.7.0 SPMC"]
+        TA["AES Trusted Application"]
+    end
+
+    subgraph EL3["EL3 · Secure Monitor"]
+        SPMD["TF-A SPMD\nFF-A physical instance routing"]
+    end
+
+    BOOT["Build/U-Boot 설정\nSPMC_AT_EL=1\nffa-unmap-on-lend"]
+
+    COEX --> AES
+    COEX --> VMM
+    AES --> OPTEEDRV --> FFAHOST
+    VMM --> KVMIO --> HYPVM
+    HYPVM --> PVMTEST
+    PVMTEST -->|"HVC FF-A virtual instance"| HYPFFA
+    FFAHOST -->|"SMC FF-A physical instance"| HYPFFA
+    HYPFFA --> SPMD --> SPMC --> TA
+    HYPVM --> HYPSTATE
+    HYPFFA --> HYPSTATE
+    HYPSTATE --> MEMPROTECT
+    GUESTTA -. "Phase 06-B 다음 구현" .-> PVMTEST
+    BOOT -.-> SPMD
+    BOOT -.-> FFAHOST
+    COEX -. "panic 관찰" .-> MEMPROTECT
+```
+
+현재 정상 확인된 경로는 Host AES와 pVM의 최소 FF-A 호출까지다. `Guest Linux + OP-TEE
+client`는 아직 구현되지 않았다. 현재 HYP panic은 EL2의 FF-A page state와 NS-EL1의 pVM
+teardown reclaim이 만나는 `HYPSTATE → MEMPROTECT` 경계에서 발생한다.
+
+### 모듈 및 파일별 변경 내역
+
+| Exception Level / 영역 | 모듈·파일 | 수행한 수정 | 목적과 현재 결과 | 상태 |
+|---|---|---|---|---|
+| 빌드 구성 | `work/src/tools/optee-pkvm/build.sh` | OP-TEE 빌드 인자에 `SPMC_AT_EL=1` 추가 | OP-TEE를 S-EL1 SPMC로 실행하고 FF-A physical instance를 구성했다. OP-TEE 4.7.0 SPMC 및 Host OP-TEE driver 초기화를 확인했다. | 적용·기준선 통과 |
+| 부팅 구성 | `work/src/tools/optee-pkvm/u-boot-pkvm.conf` | 커널 인자에 `kvm-arm.ffa-unmap-on-lend` 추가 | Host가 Secure World에 lend/share한 페이지를 pKVM Host Stage-2에서 추적·차단하도록 활성화했다. | 적용·기준선 통과 |
+| NS-EL1 Host Linux | `work/src/pkvm-linux/drivers/firmware/arm_ffa/driver.c` | FF-A driver initcall을 `rootfs_initcall`에서 `late_initcall`로 변경 | Host의 `FFA_VERSION` 및 RX/TX map보다 pKVM FF-A proxy가 먼저 설치되도록 순서를 보장했다. 초기 direct request의 `FFA_ERROR_INVALID_PARAMETER` 문제를 해소했다. | 적용·Host probe 통과 |
+| NS-EL1 KVM ioctl | `work/src/pkvm-linux/arch/arm64/kvm/arm.c` | 함수 진입 시 모든 non-zero `cap->flags`를 거부하던 선행 검사 제거 | `KVM_CAP_ARM_PROTECTED_VM_FLAGS_SET_FFA`가 protected VM 전용 handler에 도달하도록 수정했다. Android upstream의 capability-with-flags 분기 구조와 일치한다. | 적용·SET_FFA 통과 |
+| EL2 pKVM FF-A proxy | `work/src/pkvm-linux/arch/arm64/kvm/hyp/nvhe/ffa.c` | Host FF-A handle에 최대 64개 constituent range와 개수를 보관하고, 최초/fragment share에서 누적하며 reclaim 때 로컬 range를 사용하도록 변경. 새 생성 알림의 `FFA_RUN/INVALID_PARAMETERS`는 direct request를 계속하도록 처리 | OP-TEE SPMC가 NW initiated `FFA_MEM_RETRIEVE_REQ`를 처리하지 못하므로 retrieve 없이 Host Stage-2 unshare/reclaim을 수행한다. Host AES 동시 실행·재호출과 `Mlocked: 0 kB`를 통과했다. | 적용·회귀 통과 |
+| NS-EL1 pVM VMM 및 guest payload | `work/src/pkvm-linux/tools/testing/selftests/kvm/arm64/pkvm.c` | protected VM 생성 직후 `SET_FFA` capability 활성화, guest의 `FFA_VERSION(1.2)`·`FFA_ID_GET` 검증, 잘못된 RX/TX map·share·endpoint 거부 검증(`PVM_FFA_NEGATIVE_OK`), 공존 관찰용 500 ms 활성 구간 추가 | pVM virtual FF-A instance와 오류 경계가 실측됐다. `PVM_FFA_MINIMAL_OK`, `PVM_FFA_NEGATIVE_OK`, `Guest done`, `All ok!`을 확인했다. | FF-A 정상·오류 통과 |
+| NS-EL1 pVM selftest ABI | `work/src/pkvm-linux/tools/testing/selftests/kvm/lib/arm64/processor.c` | SMCCC HVC inline assembly의 clobber 목록에 `x8`~`x17` 추가 | FF-A 1.2 extended response가 결과 포인터를 보관하던 `x12`를 덮어 반환값이 0으로 보이던 selftest 오류를 수정했다. | 적용·반환값 검증 통과 |
+| EL0 공존 하네스 | `work/src/tools/optee-pkvm/coexist-test.sh` | KVM fd 패턴 확장, 반복적인 `SIGSTOP/SIGCONT` 제거, guest Linux·4 KiB marker 검사 추가 | `KVM_CREATE_VM` 경쟁 조건을 제거하고 FF-A pVM과 Host AES의 실제 중첩 실행을 만든다. `COEX_PVM_LINUX_TA_OK`와 전체 회수 marker까지 확인했다. | 적용·통합 통과 |
+| NS-EL1 guest rootfs/VMM | `work/src/tools/optee-pkvm-guest/{init.sh,mkrootfs.sh,build-kvmtool.sh}` | Buildroot target에 tee-supplicant/libteec/AES TA와 guest init을 넣고, kvmtool protected-FFA 옵션 및 동일 툴체인 빌드 경로를 제공 | guest Linux boot, `/dev/teepriv0`, 표준 TA client와 4 KiB 암복호화를 확인했다. | 적용·통합 통과 |
+| EL2 page-state 진단 지점 | `work/src/pkvm-linux/arch/arm64/kvm/pkvm.c` | teardown reclaim 전에 `pkvm_host_stage2_topup()`을 1회 수행 | guest page 회수 시 Host Stage-2 pool 고갈(`-ENOMEMHOSTS2`)로 발생한 line 2229 panic을 예방한다. 동시 pVM teardown 회귀를 통과했다. | 적용·panic 해소 |
+| EL3 / S-EL1 | TF-A SPMD 및 OP-TEE SPMC 소스 | 레지스터 및 handler 진단용 임시 변경을 사용한 뒤 모두 원복 | SPMC 자체의 direct-message 계약 문제가 아니라 pKVM proxy 설치 순서와 reclaim 방식이 원인이었음을 분리 확인했다. | 소스 변경 없음 |
+
+위 표의 `적용` 항목은 현재 작업 트리에 남아 있는 변경이다. 진단 과정에서 사용한 TF-A,
+OP-TEE 및 임시 printk 변경은 최종 변경에 포함하지 않았다. 또한 64-range 고정 배열은 현재
+시험 부하를 통과하기 위한 제한이므로, 동시 handle 수와 descriptor fragmentation 상한을
+완료 전에 다시 검토해야 한다.
+
+### 표준 TEE client 경로 최종 실측 (2026-08-18)
+
+`work/build/optee-pkvm/console-phase-06-b-guest-linux-12.log`와 대응 secure log에서
+다음 marker를 같은 부팅 세션으로 확인했다.
+
+| 검증 | 결과 marker |
+|---|---|
+| protected Linux pVM 부팅·OP-TEE probe | `PVM_LINUX_BOOT_OK`, `PVM_OPTEE_PROBE_OK` |
+| 정확히 4 KiB TA 암복호화 | `PVM_TA_AES_4K_OK: bytes=4096 encrypt=ok decrypt=ok compare=ok` |
+| 잘못된 FF-A 요청 거부 | `PVM_FFA_NEGATIVE_OK: bad_rxtx bad_share bad_endpoint` |
+| pVM 생성·종료 및 Host 동시 AES | `COEX_KVM_ACTIVE`, `COEX_AES_DURING_PVM_OK`, `COEX_PVM_OK`, `COEX_AES_REOPEN_OK` |
+| 메모리 회수 | `Mlocked: 0 kB`, `OPTEE_PKVM_VALIDATION_OK` |
+| 두 pVM endpoint/session 분리 | `COEX_TWO_PVM_ISOLATION_OK: independent_endpoints=2 independent_sessions=2` |
+
+이 실측은 Trusted Access 전용 기능을 호출하지 않는 표준 OP-TEE client 범위의 결과다.
+
 ### 현재 판정
 
-다음 이유로 Phase 06-B는 아직 미완료다.
+Trusted Access를 요구하지 않는 현재 범위에서 Phase 06-B 완료조건은 다음 실측으로 충족됐다.
 
-- Linux pVM 이미지와 pVM용 OP-TEE client가 아직 구성되지 않았다.
-- pVM에서 `TEEC_OpenSession()` 및 `TEEC_InvokeCommand()`를 실행하지 못했다.
-- 4 KiB 입력의 TA 암호화·복호화 시험을 수행하지 못했다.
-- Host 비노출, 다른 pVM 접근 차단, 오류 주입 및 자원 회수를 검증하지 못했다.
-- 선행 조건인 Host FF-A OP-TEE probe부터 `FFA_ERROR_INVALID_PARAMETER`로 실패한다.
+- Linux pVM, guest OP-TEE probe, 표준 client의 TA 호출이 구성됐다.
+- 4 KiB 암호화·복호화, pVM teardown, Host 동시 AES 회귀가 통과했다.
+- 잘못된 FF-A RX/TX map·share·endpoint 요청이 `PVM_FFA_NEGATIVE_OK`로 거부됐다.
+- 두 protected pVM의 endpoint/session 분리와 동시 TA 호출이 통과했다.
+- Trusted Access 전용 기능은 범위 밖이며 별도 완료조건으로 추적하지 않는다.
 
-Phase 완료 조건을 충족하지 않았으므로 이 조사 결과에 대해 Phase 완료 커밋이나 push를
-수행하지 않았다.
+따라서 이 범위의 Phase 완료조건은 충족했다. 변경 문서와 소스의 최종 검토 후 완료 커밋과
+upstream push를 수행한다.
 
 ### 다음 확인 순서
 
 후속 작업은 한 항목씩 다음 순서로 확인한다.
 
-1. TF-A SPMD가 OP-TEE logical partition의 첫 direct request를 거부하는 정확한 조건을
-   레지스터와 양쪽 handler 로그로 확정한다.
-2. Host Linux의 `optee arm-ffa-1` probe와 기존 Phase 06 TA 호출을 SPMC 구성에서 먼저
-   복구한다.
-3. VMM에 `KVM_CAP_ARM_PROTECTED_VM_FLAGS_SET_FFA`를 적용하고 pVM에서
-   `FFA_VERSION`, `FFA_ID_GET` 최소 호출을 확인한다.
-4. Linux가 부팅되는 pVM과 guest OP-TEE driver/client를 구성한다.
-5. 정상 TA 호출 후 공유 범위, Host 및 다른 pVM 접근 차단, 오류 거부와 자원 회수를 차례로
-   검증한다.
+1. FF-A pVM teardown과 Host AES 동시 실행을 panic 없이 통과시킨다.
+2. Linux pVM의 표준 OP-TEE client와 정확한 4 KiB TA 호출을 검증한다.
+3. 잘못된 FF-A 요청 거부, private page Host 접근 차단, 세션·공유 메모리 회수를 확인한다.
 
 ## 완료 조건
 
 다음 결과가 같은 부팅 세션의 로그로 확인되어야 한다.
 
 - pVM Linux가 protected VM으로 부팅된다.
-- pVM 내부에서 `TEEC_OpenSession()`과 `TEEC_InvokeCommand()`가 성공한다.
-- TA가 4 KiB 입력을 암호화·복호화하고 원본 일치를 확인한다.
+- pVM 내부에서 표준 `TEEC_OpenSession()`과 `TEEC_InvokeCommand()`가 성공한다.
+- 일반 TA가 정확히 4 KiB 입력을 암호화·복호화하고 원본 일치를 확인한다.
 - TA 호출 중 pVM과 Secure World가 필요한 페이지만 공유한다.
 - 공유 구간에 대한 Host CPU 접근이 차단된다.
-- 다른 pVM이 호출 데이터와 기존 TA 세션에 접근하지 못한다.
-- 잘못된 공유 및 세션 요청이 예상된 오류로 거부된다.
+- 다른 pVM 경계는 FF-A endpoint와 TA context가 분리되고, 잘못된 endpoint/share 요청이
+  예상된 오류로 거부되는 범위까지 확인한다. Trusted Access 전용 세션 탈취 시험은 제외한다.
 - 호출 및 pVM 종료 후 공유 매핑, TA 세션, 메모리와 vCPU 자원이 회수된다.
 
 Host 프록시 경로의 성공은 기능 대조군일 뿐이며 Phase 06-B의 완료 조건으로 인정하지 않는다.

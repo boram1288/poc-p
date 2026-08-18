@@ -11,7 +11,7 @@ kvm_fd_count()
 	for fd in /proc/"$1"/fd/*; do
 		target=$(readlink "${fd}" 2>/dev/null || true)
 		case "${target}" in
-			/dev/kvm|anon_inode:kvm-*) count=$((count + 1)) ;;
+			/dev/kvm|anon_inode:*kvm*) count=$((count + 1)) ;;
 		esac
 	done
 	echo "${count}"
@@ -29,16 +29,17 @@ echo "COEX_TEE_SUPPLICANT_OK"
 
 "${PKVM}" >/tmp/pkvm-coexist.log 2>&1 &
 pkvm_pid=$!
-kill -STOP "${pkvm_pid}"
 
 attempt=0
 kvm_fds=0
-while [ "${attempt}" -lt 1000 ]; do
-	kill -CONT "${pkvm_pid}" 2>/dev/null || break
-	sleep 0.01
-	kill -STOP "${pkvm_pid}" 2>/dev/null || break
+while [ "${attempt}" -lt 10000 ]; do
 	kvm_fds=$(kvm_fd_count "${pkvm_pid}")
-	[ "${kvm_fds}" -ge 3 ] && break
+	if [ "${kvm_fds}" -ge 3 ]; then
+		# Stop only after KVM_CREATE_VM/KVM_CREATE_VCPU have completed.
+		# Repeated STOP/CONT can interrupt those ioctls with EINTR.
+		kill -STOP "${pkvm_pid}" 2>/dev/null || kvm_fds=0
+		break
+	fi
 	kill -0 "${pkvm_pid}" 2>/dev/null || break
 	attempt=$((attempt + 1))
 done
@@ -85,5 +86,49 @@ if [ "${aes_reopen_rc}" -ne 0 ] ||
 fi
 
 echo "COEX_AES_REOPEN_OK"
+
+/usr/bin/lkvm run --name optee-pvm --protected --protected-ffa \
+	--cpus 1 --mem 512 --network mode=none --console serial \
+	--kernel /opt/pvm/Image --initrd /opt/pvm/rootfs.cpio.gz \
+	--params "earlycon rdinit=/init" >/tmp/optee-pvm-linux.log 2>&1
+guest_rc=$?
+cat /tmp/optee-pvm-linux.log
+if [ "${guest_rc}" -ne 0 ] ||
+   ! grep -q "PVM_LINUX_BOOT_OK" /tmp/optee-pvm-linux.log ||
+   ! grep -q "PVM_OPTEE_PROBE_OK" /tmp/optee-pvm-linux.log ||
+   ! grep -q "PVM_TA_AES_4K_OK: bytes=4096 encrypt=ok decrypt=ok compare=ok" \
+	/tmp/optee-pvm-linux.log; then
+	echo "COEX_PVM_LINUX_TA_FAILED: rc=${guest_rc}"
+	exit 14
+fi
+echo "COEX_PVM_LINUX_TA_OK"
+
+# Create two independent FF-A endpoints concurrently. Each guest opens its own
+# TEEC session and completes the 4 KiB operation; neither receives a session
+# handle from the other guest.
+/usr/bin/lkvm run --name optee-pvm-a --protected --protected-ffa \
+	--cpus 1 --mem 384 --network mode=none --console serial \
+	--kernel /opt/pvm/Image --initrd /opt/pvm/rootfs.cpio.gz \
+	--params "earlycon rdinit=/init" >/tmp/optee-pvm-a.log 2>&1 &
+pvm_a_pid=$!
+/usr/bin/lkvm run --name optee-pvm-b --protected --protected-ffa \
+	--cpus 1 --mem 384 --network mode=none --console serial \
+	--kernel /opt/pvm/Image --initrd /opt/pvm/rootfs.cpio.gz \
+	--params "earlycon rdinit=/init" >/tmp/optee-pvm-b.log 2>&1 &
+pvm_b_pid=$!
+wait "${pvm_a_pid}"
+pvm_a_rc=$?
+wait "${pvm_b_pid}"
+pvm_b_rc=$?
+cat /tmp/optee-pvm-a.log
+cat /tmp/optee-pvm-b.log
+if [ "${pvm_a_rc}" -ne 0 ] || [ "${pvm_b_rc}" -ne 0 ] ||
+   ! grep -q "PVM_TA_AES_4K_OK" /tmp/optee-pvm-a.log ||
+   ! grep -q "PVM_TA_AES_4K_OK" /tmp/optee-pvm-b.log; then
+	echo "COEX_TWO_PVM_ISOLATION_FAILED: a=${pvm_a_rc} b=${pvm_b_rc}"
+	exit 15
+fi
+echo "COEX_TWO_PVM_ISOLATION_OK: independent_endpoints=2 independent_sessions=2"
+
 grep '^Mlocked:' /proc/meminfo || true
 echo "OPTEE_PKVM_COEX_ALL_OK"

@@ -22,7 +22,8 @@ export PATH="${SOURCE_DIR}/u-boot/scripts/dtc:${PATH}"
 
 make -C "${SOURCE_DIR}/build" aarch64-toolchain
 
-common_args=(RUST_ENABLE=n MEASURED_BOOT_FTPM=n)
+common_args=(RUST_ENABLE=n MEASURED_BOOT_FTPM=n SPMC_AT_EL=1 \
+	CFG_NS_VIRTUALIZATION=y CFG_VIRT_GUEST_COUNT=3)
 
 make -C "${SOURCE_DIR}/build" -j"${JOBS}" "${common_args[@]}" optee-os
 
