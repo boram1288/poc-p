@@ -1,6 +1,6 @@
 # Phase 08: 장치 직접 할당과 DMA 격리
 
-- 상태: 미착수
+- 상태: 완료 (2026-08-18, Phase 08 전용 회귀 통과)
 - 목적: 카메라 역할 장치와 추론 역할 장치를 각 pVM에 배타적으로 할당하고, 장치 DMA가 소유 pVM 밖으로 나가지 못하게 한다.
 - 환경: E-3
 - 관련 목표: G-8, G-9
@@ -153,6 +153,42 @@ CONFIG_PKVM_PVIOMMU=y
 | pVM 내부 드라이버 기동 | 할당된 장치의 최소 드라이버가 pVM 안에서 기동한다 |
 | 회수와 재할당 | pVM 종료 후 장치가 회수되고 다시 할당된다 |
 
+## 최종 실측 결과
+
+검증 명령은 `PHASE08=1`을 설정한 [run.sh](../../work/src/tools/pvm-framework/run.sh)로
+수행했다. GCC 교차 검증은 저장 공간 정책에 따라 수행하지 않았으며
+`work/build/pkvm-full-clang`만 사용했다.
+
+```text
+QEMU: work/build/qemu-v10-aarch64/qemu-system-aarch64 (v10.0.0)
+Machine: virt,virtualization=on,gic-version=3,iommu=smmuv3,pkvm-edu-assignment=on
+CPU: max, HYP_IOMMU_PAGES=4096
+QEMU devices: -device edu,addr=2 -device edu,addr=3
+Kernel: CONFIG_ARM_SMMU_V3=n, CONFIG_ARM_SMMU_V3_PKVM=n,
+        CONFIG_ARM_SMMU_V3_PKVM_PV=y, CONFIG_PKVM_PVIOMMU=y,
+        CONFIG_PKVM_PVM_DMA_SHARE=y, CONFIG_VFIO_PLATFORM=y
+Result: PVM_FRAMEWORK_RUN_OK, QEMU_RC=0, Mlocked=0 kB
+Log: work/build/pvm-framework/console-phase08-share-second.log
+```
+
+| 완료 조건 | 실측 증거 |
+|---|---|
+| PV driver 초기화 / assignable device N>0 | `PVM_FRAMEWORK_VFIO_READY` 2개, Camera/AI 각각 `PVM_DEVICE_ASSIGNED` |
+| 장치 배타 할당 | Camera SID `0x10`/group 1, AI SID `0x18`/group 0 |
+| Host·비소유 pVM 차단 | `PVM_DEVICE_HOST_ACCESS_BLOCKED`, `PVM_DEVICE_NONOWNER_BLOCKED` |
+| 정상 DMA 및 범위 위반 차단 | `PVM_DEVICE_DMA_NORMAL_OK`, `PVM_DEVICE_DMA_RANGE_BLOCKED`, SMMU `F_TRANSLATION` |
+| 승인된 pVM 간 DMA 공유 | Camera `PVM_DMA_SHARE_GRANTED`; AI `PVM_DMA_SHARE_ACCEPTED` 및 `PVM_DMA_SHARE_READ_OK` |
+| 승인되지 않은 receiver 차단 | `PVM_DMA_SHARE_UNAPPROVED_BLOCKED`; guest의 잘못된 SID accept가 `SMCCC_RET_INVALID_PARAMETER` |
+| Owner teardown revoke | Camera 강제 종료 뒤 AI의 `0x300000` DMA에서 SMMU `F_TRANSLATION`, `PVM_DMA_SHARE_REVOKE_BLOCKED` |
+| pVM 내부 driver 기동 | 각 role의 `PVM_DEVICE_DRIVER_OK` |
+| 회수·재할당 | `PVM_DEVICE_REASSIGN_OK`, Camera assignment 3회, AI assignment 1회 |
+
+공유 구현은 Host stage-2나 Host IOMMU에 page를 매핑하지 않는다. EL2가 Camera의 guest
+IPA를 검증해 DMA reference를 보유하고, AI의 소유 pVIOMMU domain에만 `IOMMU_READ` mapping을
+설치한다. Owner 또는 receiver teardown 시 receiver VM context로 mapping을 해제하고 page
+reference를 반환한다. 이 Phase의 공유 API는 단일 4 KiB slot과 물리 receiver SID를 사용하는
+PoC용 ABI이며 일반적인 multi-buffer production API가 아니다.
+
 차단 결과에는 반드시 대조군(차단되지 않는 정상 접근)이 함께 있어야 한다. 모든 결과에
 QEMU 버전과 머신 옵션을 함께 기록한다.
 
@@ -175,9 +211,9 @@ E-3는 에뮬레이션 환경이다. E-3에서 DMA 격리가 성립해도 실제
 
 장치 할당 성공은 실제 카메라 캡처나 GPU 가속이 성립한다는 뜻이 아니다.
 
-현재 QEMU `edu` PoC descriptor로 PV IOMMU 초기화와 `Found 1 assignable devices`까지
-실측했다. EL2 device reset callback, pVM MMIO mapping, DMA 정상/위반 대조군은 아직
-완료되지 않았다.
+현재 QEMU `edu` PoC descriptor로 PV IOMMU 초기화, 두 device assignment, EL2 reset,
+pVM MMIO mapping, 정상/범위 위반 DMA, pVM 간 one-page share/revoke, 회수와 재할당까지
+실측했다. QEMU 환경은 SMMUv3를 에뮬레이션하므로 실물 IOMMU의 기밀성을 의미하지 않는다.
 
 pKVM의 DMA 격리는 upstream 미머지 RFC에 의존한다. 이 Phase의 결과는 특정 시점의 개발
 브랜치에 대한 것이며, upstream 병합 결과와 다를 수 있다. 사용한 커밋 SHA를 결과 문서에

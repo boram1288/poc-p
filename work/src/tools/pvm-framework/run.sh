@@ -11,12 +11,27 @@ KERNEL=${KERNEL:-${PROJECT_ROOT}/work/build/pkvm-full-clang/arch/arm64/boot/Imag
 INITRD=${INITRD:-${OUTPUT_DIR}/initramfs-pvm-framework.cpio.gz}
 LOG=${1:-${OUTPUT_DIR}/console-pvm-framework.log}
 TIMEOUT=${2:-900}
+MACHINE=${MACHINE:-virt,virtualization=on,gic-version=3}
+CPU=${CPU:-cortex-a57}
+HYP_IOMMU_PAGES=${HYP_IOMMU_PAGES:-}
+QEMU_EXTRA_ARGS=${QEMU_EXTRA_ARGS:-}
+CMDLINE_EXTRA=${CMDLINE_EXTRA:-}
+PHASE08=${PHASE08:-0}
+read -r -a QEMU_EXTRA_ARGV <<< "${QEMU_EXTRA_ARGS}"
+
+CMDLINE="console=ttyAMA0 kvm-arm.mode=protected earlycon rdinit=/init"
+if [ -n "${HYP_IOMMU_PAGES}" ]; then
+	CMDLINE="${CMDLINE} kvm-arm.hyp_iommu_pages=${HYP_IOMMU_PAGES}"
+fi
+if [ -n "${CMDLINE_EXTRA}" ]; then
+	CMDLINE="${CMDLINE} ${CMDLINE_EXTRA}"
+fi
 
 mkdir -p "${OUTPUT_DIR}"
 timeout --signal=KILL "${TIMEOUT}" "${QEMU}" \
-	-machine virt,virtualization=on,gic-version=3 -cpu cortex-a57 -smp 4 -m 3G \
+	-machine "${MACHINE}" -cpu "${CPU}" -smp 4 -m 3G \
 	-nographic -nic none < /dev/null -no-reboot -kernel "${KERNEL}" -initrd "${INITRD}" \
-	-append "console=ttyAMA0 kvm-arm.mode=protected earlycon rdinit=/init" > "${LOG}" 2>&1
+	-append "${CMDLINE}" "${QEMU_EXTRA_ARGV[@]}" > "${LOG}" 2>&1
 rc=$?
 
 echo "QEMU_RC=${rc}"
@@ -42,6 +57,27 @@ for marker in "${required[@]}"; do
 		exit 1
 	fi
 done
+if [ "${PHASE08}" = 1 ]; then
+	phase08_required=(
+		PVM_DEVICE_DRIVER_OK PVM_DEVICE_NONOWNER_BLOCKED
+		PVM_DEVICE_HOST_ACCESS_BLOCKED PVM_DEVICE_DMA_NORMAL_OK
+		PVM_DEVICE_DMA_RANGE_BLOCKED PVM_DMA_SHARE_GRANTED
+		PVM_DMA_SHARE_UNAPPROVED_BLOCKED PVM_DMA_SHARE_ACCEPTED
+		PVM_DMA_SHARE_READ_OK
+		PVM_DMA_SHARE_REVOKE_BLOCKED PVM_DEVICE_REASSIGN_OK
+	)
+	for marker in "${phase08_required[@]}"; do
+		if ! grep -q "${marker}" "${LOG}"; then
+			echo "PVM_FRAMEWORK_RUN_FAILED: phase08-missing=${marker}"
+			exit 1
+		fi
+	done
+	if [ "$(grep -c 'PVM_DEVICE_ASSIGNED: role=camera' "${LOG}")" -lt 3 ] ||
+	   [ "$(grep -c 'PVM_DEVICE_ASSIGNED: role=ai' "${LOG}")" -lt 1 ]; then
+		echo "PVM_FRAMEWORK_RUN_FAILED: phase08-reassignment-count"
+		exit 1
+	fi
+fi
 if ! grep -Eq "Mlocked:[[:space:]]+0 kB" "${LOG}"; then
 	echo "PVM_FRAMEWORK_RUN_FAILED: resource-recovery"
 	exit 1

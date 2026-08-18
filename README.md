@@ -82,6 +82,10 @@ QEMU는 pKVM 부팅과 격리 동작을 확인하는 기능 검증 환경이다.
 - `docs/phase-00` ~ `docs/phase-11`: Phase별 절차, 완료 조건, 결과와 한계
 - [Phase 07 C VM 관리 프레임워크](docs/phase-07/userspace-vm-framework-design.md): public API,
   controller, VM runner와 private KVM backend 설계 및 완료 조건
+- [Phase 08 장치 할당·DMA 격리 결과](docs/phase-08/README.md): PV IOMMU, QEMU edu 두 장치,
+  Host/non-owner 차단, pVM 간 DMA share/revoke 및 teardown/reassignment 실측
+- [Phase 08 validation evidence](docs/phase-08/validation-results.md): 재현 명령, 필수 marker,
+  소스 모듈 변경과 검증 범위/한계
 - [work 디렉터리 안내](work/README.md): 소스와 빌드 산출물 관리 규칙
 
 위 성공 조건 6개는 수행 계획의 목표 ID 및 Phase에 매핑되어 있다. 매핑표는

@@ -40,6 +40,18 @@ cat > "${ROOT_DIR}/init" <<'INIT'
 /bin/mount -t sysfs sysfs /sys
 /bin/mount -t devtmpfs devtmpfs /dev 2>/dev/null
 /bin/cat /images/workload-verification.log
+for device in 10000000.pkvm-edu 10100000.pkvm-edu; do
+	if [ -e "/sys/bus/platform/devices/${device}/driver_override" ]; then
+		echo vfio-platform > "/sys/bus/platform/devices/${device}/driver_override"
+		echo "${device}" > /sys/bus/platform/drivers/vfio-platform/bind
+		group=$(/bin/busybox basename "$(/bin/busybox readlink "/sys/bus/platform/devices/${device}/iommu_group")")
+		if [ -e "/dev/vfio/${group}" ]; then
+			echo "PVM_FRAMEWORK_VFIO_READY: device=${device} group=${group}"
+		else
+			echo "PVM_FRAMEWORK_VFIO_FAILED: device=${device} group=${group}"
+		fi
+	fi
+done
 /bin/pvmd &
 daemon_pid=$!
 attempt=0

@@ -167,6 +167,7 @@ static void test_fault_isolation(void)
 	if (kill(ai.pid, SIGCONT)) fail("ai-continue", PVM_ERR_SYSTEM);
 	if (wait_state("ai", PVM_STATE_STOPPED, &ai))
 		fail("ai-completed", PVM_ERR_STATE);
+	puts("PVM_DEVICE_REASSIGN_OK");
 	puts("PVM_FRAMEWORK_FAULT_ISOLATION_OK");
 	expect("fault-camera-delete", pvm_delete(NULL, "camera"), PVM_OK);
 	expect("fault-ai-delete", pvm_delete(NULL, "ai"), PVM_OK);

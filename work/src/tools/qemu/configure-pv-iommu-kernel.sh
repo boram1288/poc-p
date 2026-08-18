@@ -21,7 +21,10 @@ fi
     --disable ARM_SMMU_V3 \
     --disable ARM_SMMU_V3_PKVM \
     --enable ARM_SMMU_V3_PKVM_PV \
-    --enable PKVM_PVIOMMU
+    --enable PKVM_PVIOMMU \
+    --enable VFIO_PLATFORM \
+    --enable PKVM_QEMU_EDU \
+    --enable PKVM_PVM_DMA_SHARE
 
 # Resolve dependencies using the arm64 Kconfig graph.
 make -C "${KERNEL_SRC}" O="${KERNEL_OUT}" ARCH=arm64 LLVM=1 \
@@ -32,5 +35,8 @@ grep -qx '# CONFIG_ARM_SMMU_V3 is not set' "${KERNEL_OUT}/.config"
 ! grep -q '^CONFIG_ARM_SMMU_V3_PKVM=' "${KERNEL_OUT}/.config"
 grep -qx 'CONFIG_ARM_SMMU_V3_PKVM_PV=y' "${KERNEL_OUT}/.config"
 grep -qx 'CONFIG_PKVM_PVIOMMU=y' "${KERNEL_OUT}/.config"
+grep -qx 'CONFIG_VFIO_PLATFORM=y' "${KERNEL_OUT}/.config"
+grep -qx 'CONFIG_PKVM_QEMU_EDU=y' "${KERNEL_OUT}/.config"
+grep -qx 'CONFIG_PKVM_PVM_DMA_SHARE=y' "${KERNEL_OUT}/.config"
 
 echo "pKVM PV IOMMU kernel configuration is valid: ${KERNEL_OUT}"

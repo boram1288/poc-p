@@ -146,7 +146,7 @@ share/lend 하이퍼콜을 구현하는 것이 사실상 유일한 경로라는 
 | 05 | pVM 2개 동시 생성/운용 | E-1 | 완료 | [phase-05](phase-05/README.md) |
 | 06 | OP-TEE와 pKVM 공존 | E-2 | 완료 | [phase-06](phase-06/README.md) |
 | 07 | 동적 pVM 수명주기 관리 | E-1 | 완료 | [phase-07](phase-07/README.md) |
-| 08 | 장치 직접 할당과 DMA 격리 | E-3 | 미착수 | [phase-08](phase-08/README.md) |
+| 08 | 장치 직접 할당과 DMA 격리 | E-3 | 완료 | [phase-08](phase-08/README.md) |
 | 09 | 프레임 버퍼 zero-copy 소유권 이전 | E-1, E-3 | 방식 미결 | [phase-09](phase-09/README.md) |
 | 10 | AI 추론 파이프라인 통합 | E-3 | 미착수 | [phase-10](phase-10/README.md) |
 | 11 | 결과 종합 및 요구사항 매핑 | - | 진행 중 | [phase-11](phase-11/README.md) |
@@ -245,8 +245,14 @@ E-3에서 수행한다. 실물 하드웨어는 사용하지 않는다.
 7. 범위를 벗어나는 DMA를 의도적으로 유발해 S2MPU 차단 결과를 대조군과 함께 남긴다.
 8. pVM 종료 후 장치 소유권이 회수되고 재할당 가능한지 확인한다.
 
-완료 조건: 장치 할당 성공 로그, Host 접근 차단 결과, DMA 범위 위반 차단 결과, 회수 후
-재할당 성공이 모두 있어야 한다. 모든 결과에 에뮬레이션 환경임을 함께 기록한다.
+9. EL2 shared-buffer manager로 Camera가 승인한 4 KiB page를 AI pVIOMMU domain에 read-only로
+   매핑하고, 승인되지 않은 receiver SID를 거부한다.
+10. Camera teardown 뒤 AI의 기존 shared IOVA DMA가 차단되고 mapping/page reference가
+    receiver context에서 회수되는지 확인한다.
+
+완료 조건: 장치 할당 성공 로그, Host 접근 차단 결과, DMA 범위 위반 차단, 승인된 pVM 간
+DMA read, 승인되지 않은 receiver 차단, owner teardown revoke, 회수 후 재할당 성공이
+모두 있어야 한다. 모든 결과에 에뮬레이션 환경임을 함께 기록한다.
 
 하드웨어 후보 비교와 제약은 [하드웨어 후보 조사](phase-08/hardware-candidates.md)에 있다.
 
