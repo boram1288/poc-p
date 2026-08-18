@@ -14,6 +14,13 @@ test -f work/src/optee-pkvm/build/qemu_v8.mk
 test -x work/src/optee-pkvm/toolchains/aarch64/bin/aarch64-linux-gnu-gcc
 ```
 
+| 파일 | 용도 |
+|---|---|
+| `pkvm-full-clang/.../Image` | Host와 pVM에 사용하는 pKVM Linux 커널 이미지 |
+| `pkvm-pvm/.../pkvm` | protected VM 생성과 메모리 격리를 검사하는 KVM selftest |
+| `optee-pkvm/build/qemu_v8.mk` | QEMU v8용 OP-TEE 전체 빌드 설정 |
+| `aarch64-linux-gnu-gcc` | OP-TEE와 AArch64 도구를 빌드하는 교차 컴파일러 |
+
 `pwd`는 저장소 루트를 가리켜야 한다. `test` 명령은 성공하면 아무것도 출력하지 않는다.
 하나라도 실패하면 이후 단계로 진행하지 말고 해당 커널, selftest 또는 OP-TEE checkout을
 먼저 준비한다. Phase 06-B의 커널 기준은 `pkvm-full-clang` 하나다.
