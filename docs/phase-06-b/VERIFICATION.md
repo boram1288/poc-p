@@ -21,6 +21,16 @@ test -x work/src/optee-pkvm/toolchains/aarch64/bin/aarch64-linux-gnu-gcc
 | `optee-pkvm/build/qemu_v8.mk` | QEMU v8용 OP-TEE 전체 빌드 설정 |
 | `aarch64-linux-gnu-gcc` | OP-TEE와 AArch64 도구를 빌드하는 교차 컴파일러 |
 
+`pkvm-pvm/kselftest-build/arm64/pkvm`은 단일 실행 파일 형태의 KVM selftest이며
+다음 검사를 포함한다.
+
+- protected VM과 vCPU 생성 및 guest payload 실행
+- regular page와 THP의 private-page Host 접근 차단
+- 메모리 share, unshare, relinquish와 MMIO guard
+- FF-A 1.2 협상과 guest endpoint ID 확인
+- 잘못된 RX/TX map, memory share, endpoint 요청 거부
+- VM 종료 후 locked memory와 pVM 자원 회수
+
 `pwd`는 저장소 루트를 가리켜야 한다. `test` 명령은 성공하면 아무것도 출력하지 않는다.
 하나라도 실패하면 이후 단계로 진행하지 말고 해당 커널, selftest 또는 OP-TEE checkout을
 먼저 준비한다. Phase 06-B의 커널 기준은 `pkvm-full-clang` 하나다.
