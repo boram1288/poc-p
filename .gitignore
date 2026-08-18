@@ -25,3 +25,17 @@ work/build/*
 !work/build/README.md
 .omc/
 .serena/
+
+# The OP-TEE checkout is a large imported tree; only the two patched kernel
+# sources above are tracked for this phase.
+work/src/optee-pkvm/optee_os/*
+!work/src/optee-pkvm/optee_os/core/
+work/src/optee-pkvm/optee_os/core/*
+!work/src/optee-pkvm/optee_os/core/arch/
+work/src/optee-pkvm/optee_os/core/arch/*
+!work/src/optee-pkvm/optee_os/core/arch/arm/
+work/src/optee-pkvm/optee_os/core/arch/arm/*
+!work/src/optee-pkvm/optee_os/core/arch/arm/kernel/
+work/src/optee-pkvm/optee_os/core/arch/arm/kernel/*
+!work/src/optee-pkvm/optee_os/core/arch/arm/kernel/thread_spmc.c
+!work/src/optee-pkvm/optee_os/core/arch/arm/kernel/virtualization.c
