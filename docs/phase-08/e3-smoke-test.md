@@ -6,6 +6,10 @@
 - 실행 도구: `work/src/tools/qemu/run-e3.sh`
 - 로그: `work/build/pkvm-qemu/console-e3-smmuv3*.log`
 
+2026-08-18에 QEMU v10.0.0 소스 빌드로 동일 테스트를 재실행했다. nested driver 경로는
+Stage-2 미노출로 실패했지만, Phase 08 설계를 PV single-stage로 전환한 뒤 PV IOMMU
+초기화에 성공했다. 따라서 Q-5는 PV 설계의 선행 조건에서 제외한다.
+
 ## 실행 환경
 
 | 항목 | 값 |
@@ -118,6 +122,59 @@ QEMU가 생성하는 기본 device tree에는 이 노드가 없다. SMMUv3 stage
 읽힌다.
 
 ## D-9에 대한 판정
+
+### QEMU v10.0.0 재검증 (2026-08-18)
+
+| 항목 | 결과 |
+|---|---|
+| QEMU | v10.0.0 (소스 빌드) |
+| protected 부팅 | 성공 (`PKVM_QEMU_BOOT_OK`) |
+| SMMUv3 features | `0x01008305` (TRANS_S1만 존재, TRANS_S2 없음) |
+| EL2 IOMMU init | 실패 `-19` (`ENODEV`) |
+| assignable devices | `0` |
+
+v10 소스의 `hw/arm/virt.c`에는 nested SMMUv3 구현이 있으나 런타임 stage-2 비트가
+노출되지 않았다. `virt_machine_10_0_options()`에서 `no_nested_smmu=false`를 명시한
+후에도 결과가 같았다. 이 변경은 원인 규명용 로컬 패치이며 완료 조건을 충족하지 못해
+커밋하지 않는다.
+
+### 웹 조사에 따른 원인
+
+QEMU 공식 v10.0.3 문서는 `iommu=smmuv3`를 “machine-wide SMMUv3” 생성 옵션으로
+설명하지만, nested translation은 별도의 `arm-smmuv3,accel=on` 경로로 설명한다.
+이 경로는 host SMMUv3 하드웨어, iommufd, ACPI 부팅을 요구하며 device-tree 기반
+에뮬레이션에는 적용되지 않는다. [QEMU virt 문서](https://qemu.readthedocs.io/en/v10.0.3/system/arm/virt.html#accelerated-smmuv3-nested-translation)
+
+QEMU의 SMMUv3 nested *에뮬레이션*은 2024년에 RFC/패치 시리즈로 제안되었고, 당시
+“QEMU는 stage-1 또는 stage-2 중 하나만 에뮬레이트한다”는 전제가 명시되어 있다.
+[nested translation 패치 시리즈](https://mail.gnu.org/archive/html/qemu-devel/2024-07/msg03294.html)
+따라서 v10.0.0의 버전 문자열만으로 pKVM이 요구하는 virtual SMMU Stage-2가
+제공된다고 판단할 수 없다. 로컬 소스에 `stage="nested"` 관련 코드가 있더라도
+현재 `virt,iommu=smmuv3` 실행에서 IDR0의 S2 비트가 0으로 관측된 것이 최종
+판정 근거다.
+
+즉 실패 원인은 다음의 조합이다.
+
+1. pKVM nested 드라이버는 IDR0에서 `TRANS_S1`과 `TRANS_S2`를 모두 요구한다.
+2. QEMU의 기본 machine-wide SMMUv3는 현재 실행 모드에서 Stage-1만 광고한다.
+3. `accel=on`은 실제 host SMMU/iommufd/ACPI 경로라 현재 TCG+DT E-3 구성의 대체가 아니다.
+4. Stage-2가 초기화되지 않아 장치 할당 검색도 `Found 0 assignable devices`에서 중단된다.
+
+### PV single-stage 전환 결과 (2026-08-18)
+
+계측 결과 DT의 SMMU 수는 1개였지만, 일반 `ARM_SMMU_V3` driver가 먼저 platform
+device에 bind하여 PV driver probe가 `-19`를 반환했다. 일반 driver와 nested driver를
+끄고 PV driver만 활성화하자 다음과 같이 초기화가 성공했다.
+
+```text
+kvm-arm-smmu-v3 9050000.smmuv3: ias 44-bit, oas 44-bit (features 0x01088705)
+kvm-arm-smmu-v3 9050000.smmuv3: allocated 65536 entries for cmdq
+kvm-arm-smmu-v3 9050000.smmuv3: allocated 32768 entries for evtq
+```
+
+`Failed to init iommu driver`는 더 이상 출력되지 않는다. 따라서 Q-5(Stage-2 QEMU)는
+PV 전용 설계에서 제거하며, 다음 blocker는 `pkvm,device-assignment` DT 노드와 실제
+IOMMU endpoint를 가진 할당 대상 device 작성이다.
 
 H-6 채택은 유지한다. QEMU가 SMMUv3를 제공하고 pKVM이 protected로 부팅하는 것까지는
 확인됐다. 다만 조사 단계에서 기록하지 못한 두 개의 선행 작업이 드러났다.

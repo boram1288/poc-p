@@ -75,12 +75,21 @@ pKVM 및 S2MPU 기능을 위해 다음 설정을 활성화한다. 설정 심볼 
 ```bash
 ./scripts/config --file "$O/.config" \
     -e KVM -e PKVM_DEBUG -e PKVM_DISABLE_STAGE2_ON_PANIC -e PKVM_STACKTRACE \
-    -e ARM_SMMU_V3 -e ARM_SMMU_V3_PKVM -e ARM_SMMU_V3_PKVM_PV \
+    -d ARM_SMMU_V3 -d ARM_SMMU_V3_PKVM -e ARM_SMMU_V3_PKVM_PV \
     -e PKVM_PVIOMMU -e VFIO_PKVM_IOMMU
 ./scripts/config --file "$O/.config" -m PKVM_SMC_FILTER -m PKVM_IOMMU_TEMPLATE
 ```
 
 EL2 벤더 모듈은 Kconfig 제약으로 `m`으로 설정해야 한다.
+
+Phase 08의 PV single-stage 설계에서는 일반 `ARM_SMMU_V3`와 nested
+`ARM_SMMU_V3_PKVM`을 함께 활성화하지 않는다. 두 driver가 동일한 SMMUv3 platform
+device에 bind하려 하면 PV driver probe가 `-ENODEV`로 실패한다. 동일 설정은 다음
+도구로 적용할 수 있다.
+
+```bash
+work/src/tools/qemu/configure-pv-iommu-kernel.sh work/build/pkvm-full-clang
+```
 
 ## clang 빌드
 

@@ -8,9 +8,9 @@
 
 ## 선행 조건
 
-- SMMUv3 stage-2를 지원하는 QEMU와 `virt,iommu=smmuv3` 구성. QEMU 8.2.2는 stage-1만
-  제공해 pKVM nested 드라이버가 `-6` ENXIO로 거부한다. 실측 근거는
-  [E-3 스모크 테스트 실측 기록](e3-smoke-test.md)에 있다.
+- PV IOMMU 경로를 사용하는 커널과 `virt,iommu=smmuv3` 구성. 이 Phase는 Guest가
+  SMMU table을 직접 관리하지 않고 EL2가 mapping을 관리하므로 nested Stage-2는
+  요구하지 않는다.
 - `pkvm,device-assignment` 노드를 포함한 device tree
 - Phase 02의 pKVM 커널이 해당 QEMU 머신에서 부팅
 - Phase 05의 다중 pVM 운용 성공
@@ -101,24 +101,55 @@ EL2 IOMMU 풀 메모리는 `kvm-arm.hyp_iommu_pages`로 지정해야 한다. 409
 
 ## 계획
 
-1. SMMUv3 stage-2를 지원하는 QEMU를 준비하고 `virt,iommu=smmuv3`로 pKVM 커널을 protected 모드로 부팅한다.
-2. `Found N assignable devices`가 0이 아닌 값이 되는지 확인한다.
-3. pVM에 장치를 할당하는 경로를 조사해 확정하고 결과를 D-7에 반영한다.
-4. 카메라 역할 장치를 Camera pVM에, 추론 역할 장치를 AI pVM에 배타적으로 할당한다.
-5. Host와 다른 pVM에서 해당 장치에 접근할 수 없음을 확인한다.
-6. 장치 DMA가 소유 pVM의 메모리 범위를 벗어나지 못하는지 확인한다.
-7. 범위를 벗어나는 DMA를 의도적으로 유발해 S2MPU 차단 결과를 얻는다.
-8. 할당한 장치의 최소 드라이버가 pVM 안에서 기동하는지 확인한다.
+### IOMMU 구현 선택
+
+| Flag | 의미 | Phase 08 판정 |
+|---|---|---|
+| `CONFIG_ARM_SMMU_V3` | 일반 Linux SMMUv3 driver | PV 전용 구성에서는 비활성화 |
+| `CONFIG_ARM_SMMU_V3_PKVM` | nested/dual-translation pKVM driver | 비활성화 |
+| `CONFIG_ARM_SMMU_V3_PKVM_PV` | EL2-managed para-virtual single-stage driver | 활성화 |
+
+세 pKVM flag 중 `PKVM`과 `PKVM_PV`는 동시에 활성화하지 않는다.
+
+1. `CONFIG_ARM_SMMU_V3=n`, `CONFIG_ARM_SMMU_V3_PKVM=n`,
+   `CONFIG_ARM_SMMU_V3_PKVM_PV=y`로 커널을 재구성한다.
+2. PV driver probe와 EL2 backend 등록을 확인한다.
+3. `pkvm,device-assignment` DT 노드를 추가하고 assignable device 수를 확인한다.
+4. pVM별 IOMMU domain에 장치를 배타적으로 연결한다.
+5. EL2 shared-buffer manager를 통해 pVM 간 DMA buffer grant/revoke를 검증한다.
+6. Host와 비소유 pVM의 접근 차단, revoke, pVM 종료 후 회수를 검증한다.
+
+7. 카메라 역할 장치를 Camera pVM에, 추론 역할 장치를 AI pVM에 배타적으로 할당한다.
+8. 장치 DMA가 소유 pVM 밖으로 나가지 못하는지 확인한다.
 9. pVM 종료 후 장치 소유권이 회수되고 재할당 가능한지 확인한다.
+
+### PV driver 초기화 실측
+
+QEMU v10.0.0에서 일반 driver와 PV driver를 함께 활성화하면 DT에서 SMMU 1개를
+찾더라도 일반 `arm-smmu-v3`가 platform device를 먼저 점유한다. PV driver의
+`platform_driver_probe()`는 `-19`를 반환한다.
+
+일반 driver를 끄고 PV driver만 활성화한 결과 `kvm-arm-smmu-v3`가 SMMU를 probe했고,
+pKVM IOMMU 초기화 오류가 사라졌다. 따라서 이 Phase의 유효한 설정은 다음과 같다.
+
+```text
+# CONFIG_ARM_SMMU_V3 is not set
+# CONFIG_ARM_SMMU_V3_PKVM is not set
+CONFIG_ARM_SMMU_V3_PKVM_PV=y
+CONFIG_PKVM_PVIOMMU=y
+```
 
 ## 완료 조건
 
 | 검사 | 판정 |
 |---|---|
+| PV driver 초기화 | nested probe 없이 PV backend 등록이 성공한다 |
 | 할당 가능 장치 인식 | `Found N assignable devices`에서 N이 0이 아니다 |
 | 장치 배타 할당 | 두 장치가 각각 다른 pVM에 할당된다 |
 | Host 접근 차단 | 할당 중 Host와 비소유 pVM의 접근이 차단된다 |
-| DMA 범위 위반 차단 | 소유 범위 밖 DMA가 S2MPU에서 차단된다 |
+| DMA 범위 위반 차단 | 소유 범위 밖 DMA가 EL2/IOMMU에서 차단된다 |
+| pVM 간 DMA 공유 | 승인된 buffer만 두 pVM domain에 매핑된다 |
+| 공유 revoke | revoke 후 상대 pVM의 DMA 접근이 차단된다 |
 | pVM 내부 드라이버 기동 | 할당된 장치의 최소 드라이버가 pVM 안에서 기동한다 |
 | 회수와 재할당 | pVM 종료 후 장치가 회수되고 다시 할당된다 |
 
