@@ -18,6 +18,9 @@ work/build/pvm-framework/console-phase08-share-second.log 300
 먼저 수행한 후 Phase 08 marker를 검사한다. 최종 결과는 `PVM_FRAMEWORK_RUN_OK`와
 `QEMU_RC=0`이다.
 
+검증에 사용한 소스 revision은 kernel `9f57ce1` (`boram1288/pkvm-linux`,
+`phase08-pkvm-edu`)와 QEMU `5b3965e` (`boram1288/qemu`, `phase08-pkvm-edu`)이다.
+
 ## 증거 marker
 
 | 단계 | marker 또는 로그 |
