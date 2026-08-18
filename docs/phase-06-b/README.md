@@ -1,12 +1,23 @@
 # Phase 06-B: pVM 내부 OP-TEE TA 호출
 
-- 상태: 진행 중 — FF-A 선행 경로 오류 분석 필요
+- 상태: 완료 — Trusted Access를 요구하지 않는 표준 OP-TEE client 범위
 - 목적: pVM 내부 애플리케이션이 Secure World의 OP-TEE TA를 호출하고, 호출 데이터가 비신뢰 Host에 노출되지 않는 경로를 검증한다.
 - 검증 방식: 별도의 Trusted Access, Secure World 메모리 덤프, 특권 디버그 인터페이스 없이
   일반 Host/guest 콘솔과 KVM·FF-A·TEEC의 공개 반환값만 사용하는 블랙박스 PoC로 한정한다.
 - 환경: E-2 확장
 - 선행 Phase: Phase 06
 - 관련 목표: G-6 확장
+
+## 관련 문서
+
+| 문서 | 내용 | 읽는 순서 |
+|---|---|---|
+| [Phase 06-B README](./README.md) | 목표, 구현 이력, 모듈뷰, Host 노출 판정과 완료조건 | 전체 결과를 먼저 파악할 때 |
+| [수동 검증 가이드](./VERIFICATION.md) | 처음 실행하는 개발자가 빌드 스크립트 내부 과정까지 명령 단위로 직접 수행하고 결과 marker를 확인하는 방법 | 환경을 재현하고 실측할 때 |
+| [Host·guest OP-TEE AES 코드 흐름](./OPTEE-AES-CODE-FLOW.md) | `optee_example_aes`부터 libteec, Linux FF-A, pKVM EL2, OP-TEE SPMC와 AES TA까지의 실제 함수 및 Host·guest 시퀀스 차이 | 호출 경로와 코드를 분석할 때 |
+
+README는 완료 판정과 보안 범위를 요약한다. 실행 명령은 수동 검증 가이드, 함수·파일별
+세부 호출 과정은 코드 흐름 문서를 기준으로 한다.
 
 ## 배경
 
@@ -15,9 +26,10 @@
 이 Phase의 목적은 pVM별 OP-TEE 호출 경로가 동작하고, 공개 인터페이스에서 잘못된 접근이
 거부되며 종료 뒤 자원이 회수되는지를 확인하는 것이다. 실제 하드웨어의 물리 공격 내성,
 제품 수준 키 보호, Secure World 내부 메모리의 직접 검사나 별도 Trusted Access 권한을
-요구하는 검증은 범위에 포함하지 않는다. 따라서 “Host 비노출”은 pKVM page-state 전환과
-Host 접근 fault, `kvm-arm.ffa-unmap-on-lend` 경로의 성공 및 공개 로그로 관찰 가능한
-reclaim 결과를 근거로 판정한다.
+요구하는 검증은 범위에 포함하지 않는다. 따라서 “Host 비노출”은 L0 Host Linux를 대상으로
+pKVM page-state 전환, Host 접근 fault, `kvm-arm.ffa-unmap-on-lend` 경로의 성공 및 공개
+로그로 관찰 가능한 reclaim 결과를 근거로 판정한다. 개발 머신의 QEMU 프로세스, 부팅 전
+guest image와 명시적인 console 출력까지 비밀로 유지한다는 의미는 아니다.
 
 Phase 06은 Host Linux에서 OP-TEE TA를 호출하는 동안 pVM이 함께 실행될 수 있음을 확인했다.
 그러나 TA client는 Host에서 실행되며, pVM 내부에서 OP-TEE 서비스를 직접 사용하는 경로는
@@ -54,13 +66,55 @@ Host가 요청 평문이나 응답을 볼 수 있으므로 이 경로의 성공�
 pKVM이 pVM의 OP-TEE 또는 FF-A 호출을 EL2에서 중재하고, Secure World 호출에 필요한
 페이지만 제한적으로 공유한다. 호출이 끝나면 공유 권한과 매핑을 회수한다.
 
-구현 전 다음 사항을 조사해 전달 방식을 확정한다.
+구현 과정에서 다음 사항을 조사해 전달 방식을 확정했다.
 
 1. pVM의 SMC 및 FF-A 호출에 대한 현재 pKVM 처리 범위
 2. TF-A와 OP-TEE가 제공하는 VM별 endpoint 및 메모리 공유 모델
 3. pVM private page를 Secure World와 공유하고 회수할 수 있는 경로
 4. OP-TEE 세션과 호출자 identity를 pVM별로 분리하는 방법
 5. 게스트 Linux OP-TEE 드라이버에 필요한 DT 또는 ACPI 인터페이스
+
+### guest 실행 시 Host 노출 판정
+
+최종 구현은 Host 프록시가 아니라 다음 protected-FFA 직접 경로를 사용한다.
+
+```text
+guest optee_example_aes / libteec
+  → guest Linux OP-TEE FF-A driver
+  → HVC
+  → pKVM EL2 kvm_guest_ffa_handler()
+  → SMC
+  → TF-A SPMD / OP-TEE SPMC
+  → AES TA
+```
+
+따라서 정상 호출에서 guest의 key·평문·암호문이 Host의 `/dev/tee0`, Host OP-TEE driver 또는
+Host `tee-supplicant`를 통과하지 않는다. AES temporary memref page는 guest의
+`PKVM_PAGE_OWNED`에서 guest/Secure World가 공유하는 `PKVM_PAGE_SHARED_OWNED`로 전환되며,
+L0 Host mapping은 추가하지 않는다.
+
+Host가 관찰할 수 있는 정보와 범위는 다음과 같다.
+
+| 관찰 주체 또는 구간 | Host가 볼 수 있는 정보 | AES payload 판정 |
+|---|---|---|
+| Host OP-TEE driver·supplicant | guest 호출 경로에서 사용하지 않음 | 전달되지 않음 |
+| pKVM FF-A 중재 | endpoint, FF-A handle, page 수, IPA→PA 변환 등은 EL2가 처리하며 정상 경로에서 descriptor를 L0 Host로 반환하지 않음 | EL2와 Secure World에는 필요하지만 L0 Host mapping은 없음 |
+| Host KVM kernel의 HYP request 처리 | 자원 부족 시 요청 종류, guest IPA, 크기와 보충 page 수 | payload 내용은 전달하지 않음 |
+| Host userspace `lkvm` | VM lifecycle, kernel/initrd 원본, 실행 시간 | runtime private page는 pKVM이 차단하지만 부팅 전 image는 Host가 제공 |
+| serial console과 시험 로그 | guest가 출력한 문자열, 성공·실패 marker와 대략적인 timing | guest가 직접 출력한 내용은 Host에 노출됨 |
+| 개발 머신의 QEMU process | 에뮬레이션되는 시스템과 장치 상태 | 실제 하드웨어 공격자 모델과 달리 전체 상태 관찰 가능 |
+
+현재 AES 예제는 key를 `0xa5`, 평문을 `0x5a`, IV를 0으로 채우므로 시험 데이터가 source와
+guest initrd에 이미 알려져 있다. 따라서 현재 결과는 FF-A 전달 경로와 page-state 격리를
+검증하지만, Host가 사전에 알 수 없는 실제 secret의 종단간 기밀성을 증명하지 않는다.
+또한 generic private page Host 접근 차단은 실측했으나 AES temporary memref 바로 그 page를
+Host가 읽도록 시도하는 buffer-specific negative test는 수행하지 않았다.
+
+정리하면 L0 Host Linux의 OP-TEE component를 통한 runtime AES payload 노출은 코드 경로에서
+발견되지 않았다. 반면 console, timing, VM lifecycle과 자원 보충 때의 guest IPA·page 수
+같은 제한된 메타데이터, 부팅 전 image, 외부 QEMU 운영자에 대한 기밀성은 이 Phase의 보장
+범위 밖이다. 실제 함수와 shared-memory 전환 과정은
+[Host·guest OP-TEE AES 코드 흐름](./OPTEE-AES-CODE-FLOW.md)을 참조한다.
 
 ## 계획
 
@@ -97,11 +151,11 @@ pKVM이 pVM의 OP-TEE 또는 FF-A 호출을 EL2에서 중재하고, Secure World
 9. TA 세션 종료와 pVM 종료 후 공유 페이지, 세션, vCPU 및 메모리가 회수되는지 확인한다.
 10. 잘못된 endpoint, 다른 pVM의 세션 핸들, 범위를 벗어난 공유 요청이 거부되는지 확인한다.
 
-## 1차 조사 및 실측 결과 (2026-08-18)
+## 구현 및 실측 이력 (2026-08-18)
 
 Phase 06-B 구현에 앞서 기존 E-2 스택의 pVM SMC/FF-A 처리 범위와 OP-TEE 전달 경로를
-조사하고 최소 호출을 실측했다. 이 조사에서는 목표 경로가 아직 성립하지 않았으므로 Phase를
-완료로 판정하지 않는다.
+조사하고 최소 호출을 실측했다. 아래 초기 조사 시점에는 목표 경로가 아직 성립하지 않았으므로
+Phase를 완료로 판정하지 않았고, 이어지는 후속 수정과 최종 실측에서 완료조건을 충족했다.
 
 ### pKVM FF-A 지원 범위
 
@@ -115,8 +169,9 @@ Phase 06-B 구현에 앞서 기존 E-2 스택의 pVM SMC/FF-A 처리 범위와 O
   사용을 명시적으로 활성화해야 한다.
 
 따라서 목표 경로는 legacy OP-TEE SMC를 그대로 전달하는 방식보다 pKVM의 기존 FF-A guest
-중재 경로를 사용하는 방향이 적합하다. 다만 해당 capability를 사용하는 Linux pVM VMM과
-guest OP-TEE client 구성은 아직 구현하지 않았다.
+중재 경로를 사용하는 방향이 적합하다. 이 1차 조사 시점에는 해당 capability를 사용하는
+Linux pVM VMM과 guest OP-TEE client 구성이 아직 구현되지 않았으며, 후속 단계에서
+`kvmtool`과 guest rootfs를 추가했다.
 
 ### legacy OP-TEE SMC 직접 호출 대조 시험
 
@@ -195,8 +250,9 @@ init으로 옮기고 `kvm-arm.ffa-unmap-on-lend`를 사용했으며, OP-TEE SPMC
 최소 FF-A가 활성화된 pVM과 Host AES를 실제로 겹쳐 실행한 다음 단계에서는
 `console-phase-06-b-pvm-ffa-final.log`에 `COEX_KVM_ACTIVE: ... kvm_fds=6`까지 기록된 뒤,
 pVM teardown의 `__pkvm_host_reclaim_page_guest()`가
-`mem_protect.c:2229`에서 HYP panic을 일으켰다. 따라서 현재 최우선 문제는 FF-A가 활성화된
-pVM 종료와 동시 Host Secure share 사이의 page-state/reclaim 충돌이다.
+`mem_protect.c:2229`에서 HYP panic을 일으켰다. 당시 최우선 문제는 FF-A가 활성화된 pVM
+종료와 동시 Host Secure share 사이의 page-state/reclaim 충돌이었다. 이후 teardown 전에
+Host Stage-2 pool을 보충하도록 수정하여 아래 최종 통합 시험에서 panic 없이 통과했다.
 
 ### Exception Level 기준 모듈뷰
 
@@ -208,7 +264,7 @@ flowchart TB
     subgraph EL0["NS-EL0 · Host 검증 프로세스"]
         COEX["coexist-test.sh\n동시 실행·상태 관찰"]
         AES["optee_example_aes\nHost TA client"]
-        VMM["pkvm selftest VMM\nKVM_CREATE_VM / SET_FFA"]
+        VMM["kvmtool / selftest VMM\nKVM_CREATE_VM / SET_FFA"]
     end
 
     subgraph NS_EL1["NS-EL1 · Host Linux"]
@@ -219,8 +275,8 @@ flowchart TB
     end
 
     subgraph PVM_EL1["NS-EL1 · Protected VM guest"]
-        PVMTEST["pVM guest selftest\nFFA_VERSION / FFA_ID_GET"]
-        GUESTTA["Guest Linux + OP-TEE client\n미구현"]
+        PVMTEST["pVM guest selftest\nFF-A 정상·오류 요청 통과"]
+        GUESTTA["Guest Linux + OP-TEE client\n4 KiB AES 통과"]
     end
 
     subgraph EL2["EL2 · pKVM nVHE Hypervisor"]
@@ -246,20 +302,20 @@ flowchart TB
     VMM --> KVMIO --> HYPVM
     HYPVM --> PVMTEST
     PVMTEST -->|"HVC FF-A virtual instance"| HYPFFA
+    GUESTTA -->|"HVC FF-A virtual instance"| HYPFFA
     FFAHOST -->|"SMC FF-A physical instance"| HYPFFA
     HYPFFA --> SPMD --> SPMC --> TA
     HYPVM --> HYPSTATE
     HYPFFA --> HYPSTATE
     HYPSTATE --> MEMPROTECT
-    GUESTTA -. "Phase 06-B 다음 구현" .-> PVMTEST
     BOOT -.-> SPMD
     BOOT -.-> FFAHOST
-    COEX -. "panic 관찰" .-> MEMPROTECT
+    COEX -. "reclaim·teardown 관찰" .-> MEMPROTECT
 ```
 
-현재 정상 확인된 경로는 Host AES와 pVM의 최소 FF-A 호출까지다. `Guest Linux + OP-TEE
-client`는 아직 구현되지 않았다. 현재 HYP panic은 EL2의 FF-A page state와 NS-EL1의 pVM
-teardown reclaim이 만나는 `HYPSTATE → MEMPROTECT` 경계에서 발생한다.
+현재 정상 확인된 경로는 Host AES, pVM 최소 FF-A 정상·오류 요청, protected Linux guest의
+표준 OP-TEE client와 4 KiB AES 호출까지다. `HYPSTATE → MEMPROTECT` 경계의 teardown
+panic은 Host Stage-2 pool 보충 수정 후 동시 pVM 종료 회귀에서 재발하지 않았다.
 
 ### 모듈 및 파일별 변경 내역
 
@@ -280,7 +336,7 @@ teardown reclaim이 만나는 `HYPSTATE → MEMPROTECT` 경계에서 발생한�
 위 표의 `적용` 항목은 현재 작업 트리에 남아 있는 변경이다. 진단 과정에서 사용한 TF-A,
 OP-TEE 및 임시 printk 변경은 최종 변경에 포함하지 않았다. 또한 64-range 고정 배열은 현재
 시험 부하를 통과하기 위한 제한이므로, 동시 handle 수와 descriptor fragmentation 상한을
-완료 전에 다시 검토해야 한다.
+확장하려면 별도의 후속 hardening에서 다시 검토해야 한다.
 
 ### 표준 TEE client 경로 최종 실측 (2026-08-18)
 
@@ -308,8 +364,9 @@ Trusted Access를 요구하지 않는 현재 범위에서 Phase 06-B 완료조�
 - 두 protected pVM의 endpoint/session 분리와 동시 TA 호출이 통과했다.
 - Trusted Access 전용 기능은 범위 밖이며 별도 완료조건으로 추적하지 않는다.
 
-따라서 이 범위의 Phase 완료조건은 충족했다. 변경 문서와 소스의 최종 검토 후 완료 커밋과
-upstream push를 수행한다.
+따라서 Trusted Access를 요구하지 않는 표준 client와 L0 Host page-state 격리 범위의 Phase
+완료조건은 충족했다. 이는 위의 console·metadata·부팅 전 image·QEMU 한계 또는 알 수 없는
+실제 secret의 종단간 기밀성까지 완료했다는 의미는 아니다.
 
 ### 완료된 확인 결과
 
@@ -326,23 +383,29 @@ upstream push를 수행한다.
 - pVM Linux가 protected VM으로 부팅된다.
 - pVM 내부에서 표준 `TEEC_OpenSession()`과 `TEEC_InvokeCommand()`가 성공한다.
 - 일반 TA가 정확히 4 KiB 입력을 암호화·복호화하고 원본 일치를 확인한다.
-- TA 호출 중 pVM과 Secure World가 필요한 페이지만 공유한다.
-- 공유 구간에 대한 Host CPU 접근이 차단된다.
+- TA 호출 중 pVM과 Secure World가 필요한 페이지만 공유하는 코드 경로를 사용한다.
+- generic private page Host CPU 접근 차단과 FF-A page-state 전환을 확인한다. AES temporary
+  memref 자체를 대상으로 한 Host read negative test는 별도 보강 항목으로 남긴다.
 - 다른 pVM 경계는 FF-A endpoint와 TA context가 분리되고, 잘못된 endpoint/share 요청이
   예상된 오류로 거부되는 범위까지 확인한다. Trusted Access 전용 세션 탈취 시험은 제외한다.
 - 호출 및 pVM 종료 후 공유 매핑, TA 세션, 메모리와 vCPU 자원이 회수된다.
 
 Host 프록시 경로의 성공은 기능 대조군일 뿐이며 Phase 06-B의 완료 조건으로 인정하지 않는다.
-직접 또는 FF-A 기반 목표 경로와 Host 비노출 검증까지 성공해야 완료로 판정한다.
+FF-A 기반 목표 경로와 위에서 정의한 L0 Host page-state 격리 범위를 성공해야 완료로 판정한다.
 
-## 예정 산출물
+## 산출물 및 위치
 
-- pVM Linux 이미지 및 rootfs 생성 도구
-- pVM용 OP-TEE client와 최소 TA 호출 프로그램
-- Host 프록시 대조군 구현 및 로그
-- 직접 또는 FF-A 기반 전달 구현
-- 정상 호출, 접근 차단, 오류 주입 및 자원 회수 로그
-- pKVM, TF-A, OP-TEE 변경 커밋과 재현 명령
+| 산출물 | 위치 |
+|---|---|
+| Phase 결과와 보안 범위 | [README](./README.md) |
+| 처음부터 수동으로 재현하는 명령과 marker | [수동 검증 가이드](./VERIFICATION.md) |
+| Host·guest 함수 호출과 시퀀스 다이어그램 | [OP-TEE AES 코드 흐름](./OPTEE-AES-CODE-FLOW.md) |
+| guest rootfs·init·kvmtool 빌드 도구 | `work/src/tools/optee-pkvm-guest/` |
+| Host·guest 공존 및 회수 검증 하네스 | `work/src/tools/optee-pkvm/coexist-test.sh` |
+| pKVM·FF-A·KVM 변경 소스 | `work/src/pkvm-linux/` |
+| guest Linux Image | `work/build/pkvm-full-clang/arch/arm64/boot/Image` |
+| guest rootfs와 실행 산출물 | `work/build/optee-pkvm-guest/` |
+| 정상 호출·오류 주입·회수 증거 로그 | `work/build/optee-pkvm/` |
 
 산출물은 기존 규칙에 따라 `work/src`, `work/build/optee-pkvm-guest`와 이 문서 아래에
 정리한다.
@@ -350,6 +413,15 @@ Host 프록시 경로의 성공은 기능 대조군일 뿐이며 Phase 06-B의 �
 ## 한계
 
 - 제품 수준의 키 프로비저닝과 영구 암호화 저장소는 범위에 포함하지 않는다.
-- QEMU E-2 확장 환경의 결과는 실제 하드웨어의 Secure World 격리 보증을 대신하지 않는다.
+- 현재 예제의 key `0xa5`, 평문 `0x5a`, IV 0은 source와 guest image를 가진 Host가 실행
+  전부터 알 수 있으므로 실제 secret의 기밀성 증거로 사용할 수 없다.
+- serial console 출력, 실행 timing, endpoint, FF-A handle과 page 수 같은 메타데이터는
+  Host가 관찰할 수 있다.
+- generic private-page 접근 차단은 확인했지만 AES temporary memref page를 직접 겨냥한 Host
+  read negative test는 수행하지 않았다.
+- QEMU E-2 확장 환경의 L0 Host 격리 결과는 개발 머신의 QEMU process나 실제 하드웨어의
+  Secure World 격리 보증을 대신하지 않는다.
+- Host가 제공하는 kernel/initrd의 무결성과 부팅 전 변조 방지는 verified boot·attestation을
+  추가하지 않은 현재 PoC의 보장 범위 밖이다.
 - 성능과 호출 지연은 완료 판정 대상이 아니다.
 - OP-TEE 및 FF-A 구성에 VM별 격리 기능이 부족하면 관련 구성 요소의 확장이 필요할 수 있다.
