@@ -91,20 +91,12 @@ OP-TEE와 Trusted Application 호출은 이번 Phase 07 재수행 범위에 포�
 
 ## 6. 관리 방식 후보
 
-### 안 A. Application 내 embedded library
+Application 안에 KVM backend를 포함하는 embedded library 방식은 후보에서 제외한다.
+Application crash와 VM lifecycle이 결합되고 중앙 정책을 보장하기 어려워, 이번 재수행의
+관리 경로 분리와 장애 격리 목적에 맞지 않기 때문이다. 비교 대상은 daemon 기반의 다음 두
+가지 방식으로 좁힌다.
 
-```text
-Application -> libpvm -> private KVM backend -> /dev/kvm
-```
-
-Application이 `libpvm`을 링크하고 같은 프로세스에서 VM을 생성한다. KVM 코드는 library 뒤로
-숨지만 VM FD와 vCPU thread는 Application 프로세스가 소유한다.
-
-- 장점: 구현과 배포가 가장 단순하고 IPC가 없다.
-- 단점: Application crash가 VM 전체를 종료하며 중앙 정책과 다중 client 조정이 어렵다.
-- Phase 07 적합성: 최소 API 검증에는 충분하지만 관리 경로 장애 격리 요구에는 약하다.
-
-### 안 B. 단일 daemon이 모든 VM을 직접 소유
+### 안 A. 단일 daemon이 모든 VM을 직접 소유
 
 ```text
 Application -> libpvm-client -> Unix socket -> pvmd
@@ -115,11 +107,16 @@ Application -> libpvm-client -> Unix socket -> pvmd
 Application은 C client API만 사용하고 `pvmd`가 인증, 정책, 이미지 검증과 모든 KVM 객체를
 소유한다. VM별 vCPU는 daemon 안의 thread로 실행한다.
 
-- 장점: 정책과 상태가 한곳에 있고 A보다 Application 격리가 명확하다.
-- 단점: backend 오류나 process-wide fault가 모든 VM과 관리 경로에 영향을 줄 수 있다.
-- Phase 07 적합성: 중앙 관리 기능은 좋지만 VM 간 장애 격리 증명은 제한적이다.
+- 장점: 정책, 상태와 KVM 객체가 한 process에 있어 동기화와 rollback이 단순하다.
+- 장점: worker process와 내부 IPC가 없어 구현량, memory 사용량과 context switch가 적다.
+- 단점: 잘못된 pointer 접근, assertion, signal 같은 process-wide fault가 모든 VM과 관리
+  API를 동시에 중단시킬 수 있다.
+- 단점: 모든 VM thread가 daemon의 주소 공간과 `/dev/kvm` 권한을 공유하므로 VM별 최소 권한
+  및 resource limit 적용이 어렵다.
+- Phase 07 적합성: lifecycle 기능은 검증할 수 있지만 한 VM backend 장애가 다른 VM과
+  manager에 전파되지 않는다는 조건을 process boundary로 입증할 수 없다.
 
-### 안 C. controller daemon과 VM별 worker process 분리 — 권고
+### 안 B. controller daemon과 VM별 worker process 분리 — 권고
 
 ```text
 Application
@@ -135,8 +132,33 @@ process가 소유한다. `pidfd` 또는 `SIGCHLD`로 worker 종료를 감지한�
 
 - 장점: Application에서 KVM을 완전히 분리하고 VM별 process fault domain을 제공한다.
 - 장점: Phase 07의 Camera 강제 종료 후 AI와 manager 생존을 구조적으로 검증할 수 있다.
-- 단점: IPC, worker protocol, 상태 동기화와 종료 순서 구현량이 가장 많다.
+- 장점: worker별 UID, capability, `rlimit` 및 향후 cgroup을 적용할 수 있어 최소 권한과 자원
+  상한을 VM 단위로 확장할 수 있다.
+- 단점: controller-worker IPC, 상태 동기화, timeout과 비정상 종료 rollback을 별도로
+  구현해야 한다.
+- 단점: worker process별 page table, stack, FD와 context switch 비용이 추가된다.
 - Phase 07 적합성: 기존 완료 조건과 이후 장치 backend 확장에 가장 잘 맞는다.
+
+### 두 안의 장점·단점과 trade-off
+
+| 비교 기준 | 안 A: 단일 daemon | 안 B: daemon + worker | 선택에 따른 trade-off |
+|---|---|---|---|
+| 장애 격리 | daemon fault가 모든 VM에 전파 | VM worker fault를 해당 VM에 한정 | B는 격리를 얻는 대신 감시·복구 로직이 증가 |
+| 상태 일관성 | 상태와 KVM 객체가 같은 주소 공간에 있어 즉시 일관 | controller 상태와 worker 실제 상태가 잠시 다를 수 있음 | A는 단순성, B는 timeout·sequence 기반 동기화 필요 |
+| 구현·시험 난이도 | thread 동기화와 KVM backend에 집중 | 내부 protocol, spawn, reap, reconnect 오류까지 시험 | B의 초기 구현·negative test 범위가 더 큼 |
+| 자원 효율 | process 하나로 memory와 FD overhead가 작음 | VM마다 process 기본 비용이 추가 | 소수 pVM에서는 B의 비용이 작지만 VM 수 증가 시 누적 |
+| 제어 지연 | 내부 함수 호출로 가장 짧음 | lifecycle 명령마다 내부 IPC 한 번 이상 추가 | data path가 아닌 control path라 Phase 07에서는 영향이 작음 |
+| 권한 분리 | daemon 하나가 전체 KVM 권한 보유 | controller와 worker 권한을 역할별로 축소 가능 | B가 least privilege 설계에 유리하지만 설정이 복잡 |
+| 자원 회수 | daemon 종료 시 모든 VM FD가 한꺼번에 닫힘 | worker 종료 시 해당 VM FD만 독립적으로 닫힘 | B가 VM별 회수와 장애 주입 증명에 유리 |
+| 운영 관찰성 | thread와 VM 로그가 한 process에 섞임 | worker PID, exit status와 VM별 로그가 분리 | B가 원인 추적에 유리하나 로그 correlation ID 필요 |
+| 확장성 | backend 추가가 daemon 안정성에 직접 영향 | backend 또는 VM 유형을 worker 단위로 격리 가능 | 이후 장치 backend까지 고려하면 B가 변경 영향 축소 |
+| Phase 07 증거력 | 기능 성공은 확인 가능 | Camera worker kill 뒤 AI와 controller 생존을 직접 확인 | B가 장애 격리 완료 조건에 더 강한 증거 제공 |
+
+안 A는 구현 기간과 구성 요소 수를 최소화하는 데 유리하다. 관리 대상이 하나이고 backend를
+신뢰할 수 있으며 process 전체 재시작을 허용한다면 합리적이다. 안 B는 구현 복잡도와 소량의
+자원 비용을 감수하고 VM별 fault domain, 독립 회수와 향후 backend 확장성을 얻는다. 이번
+Phase 07은 두 pVM 동시 운용과 한 pVM 장애 후 생존을 완료 조건으로 삼으므로 **안 B를
+권고**한다.
 
 ## 7. workload/backend 이관 후보
 
@@ -154,7 +176,7 @@ backend 중립적으로 설계하여 W3를 후속 backend로 추가할 수 있�
 
 ## 8. 권고 기준 설계 초안
 
-안 C와 W2를 선택할 경우 모듈 경계는 다음과 같다.
+안 B와 W2를 선택할 경우 모듈 경계는 다음과 같다.
 
 | 모듈 | 공개 여부 | 책임 |
 |---|---|---|
@@ -199,9 +221,8 @@ shell script는 cross-build, initramfs 생성, QEMU 시작과 최종 마커 수�
 
 ### D07-F1. process 구조
 
-- A: embedded library
-- B: 단일 daemon + VM thread
-- C: controller daemon + VM별 worker process (**권고**)
+- A: 단일 daemon + VM thread
+- B: controller daemon + VM별 worker process (**권고**)
 
 ### D07-F2. 초기 backend 범위
 
@@ -221,7 +242,7 @@ shell script는 cross-build, initramfs 생성, QEMU 시작과 최종 마커 수�
 - I2: C library만 제공
 - I3: CLI만 제공
 
-권고 조합은 **C + W2 + R1 + I1**이다. 이 조합은 Application의 KVM 의존을 제거하면서
+권고 조합은 **B + W2 + R1 + I1**이다. 이 조합은 Application의 KVM 의존을 제거하면서
 Phase 07 장애 격리를 실제 process boundary로 재검증하고, 영구 복구나 full Linux VMM 때문에
 초기 범위가 과도하게 커지는 것을 피한다.
 
@@ -234,4 +255,3 @@ Phase 07 장애 격리를 실제 process boundary로 재검증하고, 영구 복
 5. 기존 shell lifecycle test를 C test application으로 대체한다.
 6. clang kernel 기반 E-1 QEMU에서 Phase 07 완료 조건 전체를 다시 실측한다.
 7. 성공 로그와 한계를 Phase 07 README에 반영하고 완료 조건 충족 시 커밋·push한다.
-
