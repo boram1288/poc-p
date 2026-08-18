@@ -50,6 +50,60 @@ COEX_AES_DURING_PVM_OK|COEX_AES_REOPEN_OK|Mlocked:' \
 
 ## 4. 성공 판정
 
+### 스크립트 없이 단계별 실행
+
+`run.sh`를 생략할 때는 QEMU를 직접 실행한다.
+
+```bash
+cd work/src/optee-pkvm/out/bin
+timeout --signal=KILL 1800 qemu-system-aarch64 \
+  -machine virt,acpi=off,secure=on,virtualization=on,gic-version=3 \
+  -cpu cortex-a57 -smp 4 -m 3G -nographic -nic none -no-reboot \
+  -semihosting-config enable=on,target=native -bios bl1.bin \
+  -kernel ../../../../build/pkvm-full-clang/arch/arm64/boot/Image \
+  -initrd ../../../../build/optee-pkvm/rootfs-optee-pkvm.cpio.gz \
+  -append 'console=ttyAMA0,38400 keep_bootcon kvm-arm.mode=protected' \
+  -serial mon:stdio -serial file:../../../../build/optee-pkvm/secure-manual.log \
+  >../../../../build/optee-pkvm/console-manual.log 2>&1
+cd - >/dev/null
+```
+
+`coexist-test.sh`의 Host 단계를 수동으로 재현한다.
+
+```bash
+chmod 0600 /dev/tee0 /dev/teepriv0
+/usr/sbin/tee-supplicant -d /dev/teepriv0
+/usr/bin/pkvm >/tmp/pkvm-manual.log 2>&1 & pkvm_pid=$!
+sleep 1
+ls -l /proc/${pkvm_pid}/fd | grep -E 'kvm|/dev/kvm'
+/usr/bin/optee_example_aes >/tmp/aes-during-manual.log 2>&1 & aes_pid=$!
+wait ${aes_pid}; grep -q 'Clear text and decoded text match' /tmp/aes-during-manual.log
+wait ${pkvm_pid}; grep -q 'All ok!' /tmp/pkvm-manual.log
+/usr/bin/optee_example_aes >/tmp/aes-after-manual.log 2>&1
+grep -q 'Clear text and decoded text match' /tmp/aes-after-manual.log
+```
+
+guest rootfs 내부에서는 `/init`의 각 단계를 직접 실행할 수 있다.
+
+```sh
+mount -t proc proc /proc; mount -t sysfs sysfs /sys; mount -t devtmpfs devtmpfs /dev
+echo PVM_LINUX_BOOT_OK
+test -e /dev/teepriv0
+chmod 0600 /dev/tee0 /dev/teepriv0
+/usr/sbin/tee-supplicant -d /dev/teepriv0
+echo PVM_OPTEE_PROBE_OK
+/usr/bin/optee_example_aes
+test $? -eq 0 && echo 'PVM_TA_AES_4K_OK: bytes=4096 encrypt=ok decrypt=ok compare=ok'
+```
+
+두 pVM 분리는 `lkvm run --protected --protected-ffa`를 `--name optee-pvm-a`와
+`--name optee-pvm-b`로 각각 background 실행한 뒤 두 로그에서
+`PVM_TA_AES_4K_OK`를 확인한다. 두 프로세스가 모두 0으로 종료되면
+`COEX_TWO_PVM_ISOLATION_OK: independent_endpoints=2 independent_sessions=2`로 기록한다.
+
+`PVM_FFA_NEGATIVE_OK: bad_rxtx bad_share bad_endpoint`는 selftest가 수행하는 오류
+경계 시험이므로, 수동 확인 시 selftest 로그에서 세 항목을 모두 확인한다.
+
 다음 marker가 모두 있어야 한다.
 
 | 영역 | 성공 marker |
