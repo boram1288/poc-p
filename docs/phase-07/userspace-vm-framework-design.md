@@ -16,7 +16,7 @@
 |---|---|
 | Host 제어 | `pvm-manager.sh`가 executable의 프로세스 수명주기를 관리 |
 | KVM VMM | `pkvm.c`와 KVM selftest library가 `/dev/kvm`, VM/vCPU, memory slot을 직접 관리 |
-| guest code | `pkvm.c` 안의 guest code와 protected VM 진입 코드 |
+| guest code | `pkvm.c` 안의 guest source와 protected VM 진입 코드 |
 | 검증 코드 | 같은 `pkvm.c` 안에서 heartbeat, 격리, teardown 결과를 판정 |
 
 즉 기존 관리자는 KVM VM 객체의 상태를 알지 못하고 PID와 열린 KVM FD 개수만 관찰한다.
@@ -31,16 +31,37 @@
 | 통일 용어 | 의미 | 사용 예 |
 |---|---|---|
 | controller daemon | client 요청을 인증하고 정책·상태·VM runner를 관리하는 Host process인 `pvmd` | VM runner 생성, 상태 조회, 종료 지시 |
-| VM runner | VM 하나를 담당하는 Host VMM process. KVM VM/vCPU FD를 소유하는 `pvm-runner` | Camera VM runner, AI VM runner |
-| KVM backend | VM runner 안에서만 사용되는 private C 모듈. 실제 KVM ioctl을 수행 | protected VM 생성, memory 등록, `KVM_RUN` |
-| guest image | VM memory에 적재할 파일 | Phase 07 test guest image, 향후 Linux `Image` |
-| guest code | guest image에서 pVM 안에 실행되는 코드와 기능 | heartbeat 출력, 종료 마커 기록 |
+| VM runner | VM 하나의 실행 상태를 담당하는 Host VMM process인 `pvm-runner` | Camera VM runner, AI VM runner |
+| KVM backend | 실제 KVM ioctl을 캡슐화하는 private C 모듈. VM runner의 내부 구성요소가 아님 | protected VM 생성, memory 등록, `KVM_RUN` |
+| guest code | pVM에서 수행할 기능을 구현한 source code | heartbeat, 완료 마커와 종료 처리 구현 |
+| guest workload | guest code를 build하여 만든 executable binary. integrity verification 후 guest image에 포함 | `phase07-guest-workload.bin` |
+| guest image | integrity verification을 통과한 guest workload와 boot metadata를 포함하고 pVM에 적재되는 image | Phase 07 test guest image, 향후 Linux `Image`와 rootfs 조합 |
 | pVM instance | controller가 ID와 상태를 부여해 관리하는 논리적 VM 한 개 | `camera-1`, `ai-1` |
 | legacy selftest executable | VMM, guest code와 검증 코드가 결합된 현재 `pkvm.bin` | 새 guest image와 구분 |
 
-`worker`는 모두 **VM runner**로 바꾼다. `payload`와 `workload`는 파일과 실행 중 기능을
-혼동시키므로 사용하지 않고, 파일이면 **guest image**, pVM 안의 동작이면 **guest code**로
-표현한다. 특히 현재 `pkvm.bin`은 guest image가 아니라 **legacy selftest executable**이다.
+`worker`와 `payload`는 사용하지 않는다. `workload`를 단독으로 쓰지 않고 build가 끝난
+executable binary만 **guest workload**라고 부른다. source는 **guest code**, guest workload와
+boot metadata를 묶은 image는 **guest image**로 구분한다. 특히 현재 `pkvm.bin`은 guest
+image가 아니라 **legacy selftest executable**이다.
+
+### guest artifact 생성과 실행 순서
+
+```text
+guest code
+    -> build
+guest workload
+    -> guest workload integrity verification
+    -> package with boot metadata
+guest image
+    -> guest image integrity verification
+    -> load and boot pVM
+    -> execute embedded guest workload
+```
+
+`SHA256SUMS` allowlist에는 guest workload와 guest image의 digest를 각각 기록한다. packaging은
+guest workload verification이 성공한 경우에만 수행하며, controller는 pVM 생성 전에 완성된
+guest image를 다시 검증한다. guest image digest가 image 전체를 보호하므로 검증 이후 포함된
+guest workload가 바뀌면 guest image verification도 실패한다.
 
 ## 3. 범위와 성공 기준
 
@@ -49,7 +70,8 @@
 - Application 소스는 `<linux/kvm.h>`, `/dev/kvm`, `ioctl()`을 사용하지 않는다.
 - C 프레임워크가 정책 검사부터 VM 생성, 실행, 상태 조회, 종료, 회수까지 소유한다.
 - Camera와 AI 두 인스턴스를 동시에 관리한다.
-- 기존 다섯 경로인 권한 거부, 이미지 거부, 정상 생성, 장애 격리, 정상 종료를 재현한다.
+- 권한 거부, guest workload 거부, guest image 거부, 정상 생성, 장애 격리와 정상 종료를
+  재현한다.
 - 종료 후 KVM FD, vCPU, protected memory가 회수되고 `Mlocked: 0 kB`가 된다.
 - 각 결과를 구조화된 상태와 서로 다른 로그 마커로 확인할 수 있어야 한다.
 
@@ -67,15 +89,17 @@ OP-TEE와 Trusted Application 호출은 이번 Phase 07 재수행 범위에 포�
 | FR-01 | 확정 | Application은 KVM ioctl 대신 C client API를 사용한다. | Application의 KVM header/ioctl 참조가 0건인지 검사 |
 | FR-02 | 확정 | `camera`, `ai` 역할의 pVM을 생성·시작·조회·정지·삭제한다. | 역할별 정상 lifecycle 시험 |
 | FR-03 | 확정 | UID와 역할 정책을 VM 생성 전에 검사한다. | 비인가 UID 요청 거부 |
-| FR-04 | 확정 | 실행 전 guest image의 무결성을 SHA-256 허용 목록으로 검사한다. | 변조 guest image 거부 |
-| FR-05 | 확정 | 두 pVM을 동시에 실행하고 독립 상태를 조회한다. | Camera/AI 동시 RUNNING 확인 |
-| FR-06 | 확정 | 한 pVM의 강제 종료가 다른 pVM과 관리 경로를 중단시키지 않는다. | Camera 장애 후 AI와 관리자 생존 확인 |
-| FR-07 | 확정 | 종료 후 VM/vCPU/memory/FD 자원을 회수한다. | PID·KVM FD 소멸과 `Mlocked` 확인 |
-| FR-08 | 제안 | 요청·응답에 protocol version과 request ID를 둔다. | 잘못된 version 및 중복 ID 시험 |
-| FR-09 | 제안 | `CREATED`, `RUNNING`, `STOPPING`, `STOPPED`, `FAILED` 상태 전이를 강제한다. | 허용되지 않은 전이 거부 시험 |
-| FR-10 | 제안 | 프레임워크가 VM runner의 비정상 종료를 감지하고 `FAILED` 원인을 보존한다. | `SIGKILL` 주입 후 상태·exit reason 확인 |
-| FR-11 | 제안 | controller daemon 재시작 시 실행 중 VM runner를 재발견하거나 안전하게 정리한다. | daemon restart recovery 시험 |
-| FR-12 | 제안 | 조회 API로 role, instance ID, state, PID, vCPU 수, memory 크기, 종료 원인을 반환한다. | API 응답 필드 검사 |
+| FR-04 | 확정 | guest workload를 guest image에 포함하기 전에 SHA-256 allowlist로 무결성을 검사한다. | 변조 guest workload의 packaging 거부 |
+| FR-05 | 확정 | pVM 생성 전에 완성된 guest image의 무결성을 SHA-256 allowlist로 검사한다. | 변조 guest image 거부 |
+| FR-06 | 확정 | pVM boot 후 guest image에 포함된 guest workload를 실행한다. | guest workload 시작·완료 marker 확인 |
+| FR-07 | 확정 | 두 pVM을 동시에 실행하고 독립 상태를 조회한다. | Camera/AI 동시 RUNNING 확인 |
+| FR-08 | 확정 | 한 pVM의 강제 종료가 다른 pVM과 관리 경로를 중단시키지 않는다. | Camera 장애 후 AI와 관리자 생존 확인 |
+| FR-09 | 확정 | 종료 후 VM/vCPU/memory/FD 자원을 회수한다. | PID·KVM FD 소멸과 `Mlocked` 확인 |
+| FR-10 | 제안 | 요청·응답에 protocol version과 request ID를 둔다. | 잘못된 version 및 중복 ID 시험 |
+| FR-11 | 제안 | `CREATED`, `RUNNING`, `STOPPING`, `STOPPED`, `FAILED` 상태 전이를 강제한다. | 허용되지 않은 전이 거부 시험 |
+| FR-12 | 제안 | 프레임워크가 VM runner의 비정상 종료를 감지하고 `FAILED` 원인을 보존한다. | `SIGKILL` 주입 후 상태·exit reason 확인 |
+| FR-13 | 제안 | controller daemon 재시작 시 실행 중 VM runner를 재발견하거나 안전하게 정리한다. | daemon restart recovery 시험 |
+| FR-14 | 제안 | 조회 API로 role, instance ID, state, PID, vCPU 수, memory 크기, 종료 원인을 반환한다. | API 응답 필드 검사 |
 
 ## 5. 비기능 요구사항 초안
 
@@ -99,14 +123,15 @@ OP-TEE와 Trusted Application 호출은 이번 Phase 07 재수행 범위에 포�
 | ID | 제약 | 설계 영향 |
 |---|---|---|
 | C-01 | KVM ioctl 자체는 없어지는 것이 아니라 신뢰된 VMM/backend 내부로 이동해야 한다. | ioctl 사용 파일을 private backend로 한정 |
-| C-02 | 현재 `pkvm.bin`은 VMM, guest code와 검증이 결합된 legacy selftest ELF다. | guest image로 바로 사용할 수 없음 |
+| C-02 | 현재 `pkvm.bin`은 VMM, guest code와 검증이 결합된 legacy selftest ELF다. | guest code를 guest workload로 별도 build하고 guest image에 package해야 함 |
 | C-03 | protected VM은 일반 KVM VM 생성 외에 `KVM_CAP_ARM_PROTECTED_VM` 설정과 전용 부팅 순서가 필요하다. | backend가 순서와 오류 rollback을 캡슐화 |
 | C-04 | E-1 initramfs는 BusyBox 중심의 최소 환경이다. | 외부 runtime과 동적 library 의존을 피함 |
 | C-05 | QEMU TCG 결과는 기능 검증이며 실장치 성능·보안 보증이 아니다. | 실측 결과의 주장 범위를 E-1로 제한 |
 | C-06 | E-1에는 pvmfw 신뢰 체인이 없다. | 기존 SHA-256 allowlist를 유지하고 한계를 명시 |
 | C-07 | gcc 커널 build tree는 삭제되었고 이후 교차 검증을 하지 않는다. | clang kernel 한 개만 검증 입력으로 사용 |
 | C-08 | OP-TEE/TA가 없어도 완료 가능한 목적 범위다. | Secure World 연동 API는 이번 설계에서 제외 |
-| C-09 | kernel selftest library는 제품용 안정 ABI가 아니다. | 초기 backend adapter로 격리하고 public API에 노출하지 않음 |
+| C-09 | kernel selftest library는 제품용 안정 ABI가 아니다. | 초기 KVM backend adapter로 격리하고 public API에 노출하지 않음 |
+| C-10 | guest workload와 guest image는 서로 다른 artifact다. | allowlist에 두 digest를 별도로 기록하고 workload 검증을 먼저 수행 |
 
 ## 7. 관리 방식 후보
 
@@ -142,12 +167,13 @@ Application
     -> libpvm-client
         -> Unix SOCK_SEQPACKET
             -> pvmd (인증·정책·상태·감시)
-                ├─ pvm-runner camera -> private KVM backend -> /dev/kvm
-                └─ pvm-runner ai     -> private KVM backend -> /dev/kvm
+                ├─ pvm-runner camera
+                └─ pvm-runner ai
 ```
 
-`pvmd`는 control plane만 소유하고 각 VM의 KVM FD, memory, vCPU는 별도 `pvm-runner`
-process가 소유한다. `pidfd` 또는 `SIGCHLD`로 VM runner 종료를 감지한다.
+`pvmd`는 control plane을 소유하고 `pidfd` 또는 `SIGCHLD`로 VM runner 종료를 감지한다.
+KVM backend는 VM runner 내부 구성요소로 두지 않으며, 구체적인 process 배치는 상세 설계에서
+별도로 확정한다.
 
 - 장점: Application에서 KVM을 완전히 분리하고 VM별 process fault domain을 제공한다.
 - 장점: Phase 07의 Camera 강제 종료 후 AI와 manager 생존을 구조적으로 검증할 수 있다.
@@ -179,19 +205,19 @@ process가 소유한다. `pidfd` 또는 `SIGCHLD`로 VM runner 종료를 감지�
 Phase 07은 두 pVM 동시 운용과 한 pVM 장애 후 생존을 완료 조건으로 삼으므로 **안 B를
 권고**한다.
 
-## 8. guest image와 KVM backend 이관 후보
+## 8. guest artifact와 KVM backend 이관 후보
 
 관리 방식과 별도로 현재 selftest 결합을 어느 수준까지 해소할지 결정해야 한다.
 
 | 안 | 내용 | 장점 | 한계 |
 |---|---|---|---|
-| W1 | controller가 기존 `pkvm.bin`을 legacy VM runner로 그대로 시작 | 가장 빠르게 기존 결과 재사용 | 프레임워크가 VM 객체를 소유하지 않아 핵심 목적을 부분 충족 |
-| W2 | 최소 protected VM 실행 로직을 `pvm-runner`와 C backend로 분리하고 test guest image를 적재 | ioctl 캡슐화와 실제 VM 상태 관리가 성립 | selftest helper 의존을 private 영역에 격리해야 함 |
-| W3 | Linux-capable VMM(kvmtool 계열)을 VM runner backend로 연결하고 Linux guest image를 적재 | 이후 일반 Linux guest에 유리 | Phase 07 범위를 크게 넘고 장치·boot protocol 구현 부담이 큼 |
+| W1 | controller가 기존 `pkvm.bin`을 legacy VM runner로 그대로 시작 | 가장 빠르게 기존 결과 재사용 | guest workload와 guest image가 분리되지 않아 새 artifact model을 충족하지 못함 |
+| W2 | guest code를 test guest workload로 build·verify·package하고 최소 protected VM 경로에서 guest image를 실행 | artifact와 ioctl 책임 분리가 성립 | selftest helper 의존을 private 영역에 격리해야 함 |
+| W3 | Linux-capable VMM(kvmtool 계열)로 Linux guest image를 실행하고 내부에서 guest workload를 시작 | 이후 일반 Linux guest에 유리 | Phase 07 범위를 크게 넘고 장치·boot protocol 구현 부담이 큼 |
 
-**권고는 W2**다. Phase 07에서는 작은 test guest image로 lifecycle을 검증하고, public API는
-backend 중립적으로 설계하여 W3를 후속 backend로 추가할 수 있게 한다. W1은 전환 중 대조군
-용도로만 유지한다.
+**권고는 W2**다. Phase 07에서는 작은 test guest workload와 guest image로 lifecycle을
+검증하고, public API는 backend 중립적으로 설계하여 W3를 후속 경로로 추가할 수 있게 한다.
+W1은 전환 중 대조군 용도로만 유지한다.
 
 ## 9. 권고 기준 설계 초안
 
@@ -202,8 +228,12 @@ backend 중립적으로 설계하여 W3를 후속 backend로 추가할 수 있�
 | `include/pvm/pvm.h` | 공개 | Application용 create/start/status/stop/list API와 오류 코드 |
 | `lib/pvm_client.c` | 공개 library | 요청 직렬화, socket 연결, 응답 검증 |
 | `daemon/pvmd.c` | 비공개 | peer credential 인증, policy, instance registry, 상태 전이 |
-| `runner/pvm_runner.c` | 비공개 | VM별 runner process entry, backend 호출, 상태/종료 결과 보고 |
-| `backend/pvm_kvm_arm64.c` | 비공개 | `/dev/kvm`, protected VM/vCPU/memory/ioctl 순서와 rollback |
+| `runner/pvm_runner.c` | 비공개 | VM별 runner process entry, guest image 실행 상태와 종료 결과 보고 |
+| `backend/pvm_kvm_arm64.c` | 비공개 | `/dev/kvm`, protected VM/vCPU/memory/ioctl 순서와 rollback. process 배치는 상세 설계에서 확정 |
+| `guest/phase07_guest.c` | 비공개 | test guest code source |
+| `guest/phase07-guest-workload.bin` | 검증용 artifact | guest code를 build한 executable binary |
+| `images/phase07-guest.img` | 검증용 artifact | verified guest workload와 boot metadata를 포함한 guest image |
+| `images/SHA256SUMS` | 비공개 policy | guest workload와 guest image의 허용 digest |
 | `common/protocol.h` | 내부 공유 | versioned fixed-size IPC message와 크기 상한 |
 | `cli/pvmctl.c` | 공개 도구 | 수동 검증과 운영 진단용 CLI; client library만 사용 |
 | `tests/phase07_app.c` | 검증용 | KVM을 모르는 Host Application 역할 |
@@ -225,11 +255,11 @@ NEW -> VERIFIED -> CREATED -> RUNNING -> STOPPING -> STOPPED
 | 기존 검증 | 새 프레임워크 검증 |
 |---|---|
 | 요청 파일 UID 65534 거부 | 비인가 client의 socket 연결/CREATE 거부 |
-| 변조 `pkvm.bin` 거부 | 변조 guest image의 manifest 검증 실패 |
-| PID와 KVM FD 3개 이상 | API state=RUNNING 및 VM runner의 VM/vCPU FD 보유 확인 |
+| 변조 `pkvm.bin` 거부 | 변조 guest workload의 packaging 거부와 변조 guest image의 create 거부를 각각 확인 |
+| PID와 KVM FD 3개 이상 | API state=RUNNING 및 framework가 관리하는 VM/vCPU FD 확인 |
 | STOP 요청 | client API STOP 후 STOPPED와 FD/VM runner 회수 확인 |
 | Camera `SIGKILL` | Camera VM runner kill 후 FAILED, AI RUNNING, `pvmd` 응답 확인 |
-| AI selftest 완료 | AI VM runner의 guest code 완료 event 확인 |
+| AI selftest 완료 | AI pVM의 guest workload 완료 event 확인 |
 | `Mlocked: 0 kB` | 전체 destroy 뒤 기존 기준을 동일하게 확인 |
 
 shell script는 cross-build, initramfs 생성, QEMU 시작과 최종 마커 수집에만 남긴다. Phase 07의
@@ -246,8 +276,8 @@ shell script는 cross-build, initramfs 생성, QEMU 시작과 최종 마커 수�
 ### D07-F2. 초기 backend 범위
 
 - W1: 기존 legacy selftest executable을 VM runner로 시작
-- W2: 최소 protected VM 실행 로직을 `pvm-runner`와 C backend로 분리 (**권고**)
-- W3: 처음부터 Linux-capable VM runner backend
+- W2: guest workload와 guest image를 분리하고 최소 protected VM 실행 경로로 검증 (**권고**)
+- W3: 처음부터 Linux-capable VMM 실행 경로
 
 ### D07-F3. daemon 재시작 복구 수준
 
@@ -270,7 +300,8 @@ Phase 07 장애 격리를 실제 process boundary로 재검증하고, 영구 복
 1. 선택 결과로 기능·비기능 요구사항의 **제안** 항목을 확정하거나 제외한다.
 2. public C API, IPC protocol, 상태 머신, 오류·rollback 상세 설계를 작성한다.
 3. Host 단위 시험이 가능한 protocol/policy/state 모듈을 먼저 구현한다.
-4. arm64 protected KVM backend와 VM runner를 구현한다.
-5. 기존 shell lifecycle test를 C test application으로 대체한다.
-6. clang kernel 기반 E-1 QEMU에서 Phase 07 완료 조건 전체를 다시 실측한다.
-7. 성공 로그와 한계를 Phase 07 README에 반영하고 완료 조건 충족 시 커밋·push한다.
+4. guest code build, guest workload verification과 guest image packaging 경로를 구현한다.
+5. arm64 protected KVM backend와 VM runner를 구현한다.
+6. 기존 shell lifecycle test를 C test application으로 대체한다.
+7. clang kernel 기반 E-1 QEMU에서 Phase 07 완료 조건 전체를 다시 실측한다.
+8. 성공 로그와 한계를 Phase 07 README에 반영하고 완료 조건 충족 시 커밋·push한다.

@@ -22,10 +22,12 @@ Host Application은 `CREATE <role> <image>` 또는 `STOP <role> -` 형식의 요
 
 현재 커널에는 reserved memory의 pvmfw를 pVM에 적재하는 훅과 firmware IPA 설정 ioctl이
 있다. 그러나 E-1에는 pvmfw 바이너리, 검증된 부트 체인 및 키 기반 신뢰 루트가 구성되지
-않았다. pvmfw 로딩 훅만으로 Host가 제출한 executable의 출처와 무결성을 검증할 수
+않았다. pvmfw 로딩 훅만으로 Host가 제출한 guest image의 출처와 무결성을 검증할 수
 없으므로 Phase 07에서는 Host 관리자 소유의 `SHA256SUMS` 허용 목록을 대체 경로로 확정했다.
 
-관리자는 executable의 SHA-256이 허용 목록과 정확히 일치해야만 프로세스를 생성한다. 이 방식은
+기존 관리자는 legacy selftest executable의 SHA-256이 허용 목록과 정확히 일치해야만
+프로세스를 생성한다. 재수행 프레임워크에서는 guest code를 build한 guest workload를 먼저
+검증한 뒤 guest image에 포함하고, 완성된 guest image도 pVM 생성 전에 별도로 검증한다. 이 방식은
 변조 탐지와 실행 전 거부를 검증하지만, 비신뢰 Host에 대한 신뢰 루트는 아니다. 서명 검증,
 키 관리, measured boot 및 pvmfw 기반 검증은 제품화 후속 과제다.
 
