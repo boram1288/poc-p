@@ -34,9 +34,9 @@ Host로부터 카메라 영상과 AI 모델/추론 데이터를 격리한 상태
 | G-5 | 다중 pVM 운용 | 독립된 pVM 2개를 동시에 실행하고 종료/자원 회수 확인 | 05 | 완료 |
 | G-6 | OP-TEE 공존 | TF-A/OP-TEE와 pKVM이 같은 시스템에서 정상 초기화/동작하고 암호화/복호화 서비스 호출 성공 | 06 | 완료 |
 | G-7 | 동적 pVM 수명주기 | Host 요청의 권한/정책 확인과 이미지 검증을 거쳐 pVM 생성, 모니터링, 장애 격리, 종료, 자원 회수 | 07 | 완료 |
-| G-8 | 장치 직접 할당 | 카메라 역할 장치와 추론 역할 장치를 각 pVM에 배타적으로 할당하고 회수 | 08 | 미착수 |
-| G-9 | DMA 격리 | S2MPU가 있는 환경에서 장치 DMA 접근 차단 확인 | 08 | 미착수 |
-| G-10 | zero-copy 프레임 전달 | 카메라 프레임을 Host에 노출하지 않고 Camera pVM에서 AI pVM으로 복사 없이 이전 | 09 | 방식 미결 |
+| G-8 | 장치 직접 할당 | 카메라 역할 장치와 추론 역할 장치를 각 pVM에 배타적으로 할당하고 회수 | 08 | 완료 |
+| G-9 | DMA 격리 | S2MPU가 있는 환경에서 장치 DMA 접근 차단 확인 | 08 | 완료 |
+| G-10 | cross-pVM DMA-BUF | Camera DMA-BUF를 Host runtime relay 없이 AI pVM이 새 local FD로 import하여 read/write | 09 | 미착수 |
 | G-11 | AI 추론 결과 반환 | AI pVM이 CPU 경로로 추론을 완료하고 허용된 결과만 Host Application에 반환 | 10 | 미착수 |
 
 G-8과 G-11의 완료 조건은 D-9 확정에 따라 QEMU 에뮬레이션 장치 기준으로 판정한다. 실물
@@ -76,7 +76,7 @@ Scenario의 GPU 추론을 AI pVM 안의 CPU 추론으로 대체한 것이다.
 - OP-TEE 공존과 pVM 실행 중 암호화/복호화 서비스 호출
 - Host 요청 기반 pVM 동적 생성, 이미지 검증, 종료, 자원 회수
 - QEMU 에뮬레이션 장치의 pVM 직접 할당과 S2MPU 기반 DMA 격리
-- Camera pVM에서 AI pVM으로의 프레임 버퍼 소유권 이전
+- Camera pVM DMA-BUF의 EL2-mediated export와 AI pVM local FD import
 - AI pVM의 추론 수행과 결과만 반환하는 경로
 
 제외 범위:
@@ -123,7 +123,7 @@ E-3 결과에는 에뮬레이션 환경임을 함께 표기한다.
 | D-5 | OP-TEE 검증은 E-1과 분리된 E-2 환경에서 수행 | 확정 | 현재 QEMU-only 결과와 통합 결과 혼동 방지 |
 | D-6 | E-1 이미지 검증은 Host 관리자 소유 SHA-256 허용 목록 사용. pvmfw 신뢰 체인은 후속 과제 | 확정 | 커널에 pvmfw 적재 훅은 있으나 E-1에 firmware와 검증된 부트 체인이 없어 Phase 07 PoC는 실행 전 해시 검증으로 대체 |
 | D-7 | QEMU 역할 장치는 `vfio-platform` + `VFIO_PKVM_IOMMU` + KVM VFIO pVIOMMU + EL2 PV IOMMU 경로로 직접 할당. `vfio-pci`와 nested driver는 사용하지 않음 | 확정 | Phase 08에서 Camera/AI용 QEMU edu 두 장치의 배타 할당, DMA 격리, 회수와 재할당을 실측 |
-| D-8 | pVM 간 프레임 전달은 EL2 벤더 모듈 확장을 1안, Host 릴레이를 대조군으로 둔다 | 미결 | upstream pKVM에 guest-to-guest 메모리 프리미티브가 없음 |
+| D-8 | Phase 08 EL2 shared-buffer manager에 event queue/virtual IRQ를 추가하고 Camera DMA-BUF를 AI의 새 local FD로 import. runtime Host relay, `virtio-vsock`, Secure Partition/TA는 사용하지 않음 | 확정 | 표준 VSOCK은 Host backend를 통하고 현재 pKVM FF-A proxy는 VM-to-VM routing을 제공하지 않음 |
 | D-9 | E-3는 H-6(QEMU `virt,iommu=smmuv3`) 단일 환경. 실물 하드웨어는 PoC 범위에서 제외 | 확정 | Phase 08 조사. 실물 후보는 모두 미검증 리스크가 남고 조달 비용이 큼 |
 
 D-7에서 사용하는 QEMU edu PCI function은 DMA engine 역할을 하지만, pKVM assignment
@@ -136,9 +136,10 @@ D-9 확정으로 실물 하드웨어 후보 H-1~H-5는 채택하지 않는다. P
 에뮬레이션 장치로 수행한다. 실장치 검증은 이 PoC 이후의 후속 과제로 분리하며, 조사 결과는
 [하드웨어 후보 조사](phase-08/hardware-candidates.md)에 남긴다.
 
-D-8의 근거는 [pVM 전달 조사](../../test-p/docs/99_pvm_dmabuf_transfer.md)다. 조사 결론은
-표준 스택만으로는 pVM 간 zero-copy 전달이 불가하고, EL2 벤더 모듈로 guest-to-guest
-share/lend 하이퍼콜을 구현하는 것이 사실상 유일한 경로라는 것이다.
+D-8의 application API, guest driver/EL2 경계와 전체 호출 순서는 [EL2 DMA-BUF channel
+설계](phase-09/el2-dmabuf-channel-design.md)에 정의한다. 서로 다른 pVM의 숫자 FD를 그대로
+전달하지 않고, Camera guest driver가 export한 backing을 AI guest driver가 새로운 local
+DMA-BUF FD로 import한다. FF-A virtual instance 구현은 후속 표준화 과제로 둔다.
 
 ## 5. Phase 계획
 
@@ -153,7 +154,7 @@ share/lend 하이퍼콜을 구현하는 것이 사실상 유일한 경로라는 
 | 06 | OP-TEE와 pKVM 공존 | E-2 | 완료 | [phase-06](phase-06/README.md) |
 | 07 | 동적 pVM 수명주기 관리 | E-1 | 완료 | [phase-07](phase-07/README.md) |
 | 08 | 장치 직접 할당과 DMA 격리 | E-3 | 완료 | [phase-08](phase-08/README.md) |
-| 09 | 프레임 버퍼 zero-copy 소유권 이전 | E-1, E-3 | 방식 미결 | [phase-09](phase-09/README.md) |
+| 09 | pVM 간 DMA-BUF export/import | E-1, E-3 | 미착수 | [phase-09](phase-09/README.md) |
 | 10 | AI 추론 파이프라인 통합 | E-3 | 미착수 | [phase-10](phase-10/README.md) |
 | 11 | 결과 종합 및 요구사항 매핑 | - | 진행 중 | [phase-11](phase-11/README.md) |
 
@@ -262,17 +263,20 @@ DMA read, 승인되지 않은 receiver 차단, owner teardown revoke, 회수 후
 
 하드웨어 후보 비교와 제약은 [하드웨어 후보 조사](phase-08/hardware-candidates.md)에 있다.
 
-### Phase 09. 프레임 버퍼 zero-copy 소유권 이전
+### Phase 09. pVM 간 DMA-BUF export/import
 
-1. Host 릴레이 경로로 대조군을 먼저 구성한다. 이 경로는 복사가 발생하고 Host에 노출된다.
-2. EL2 벤더 모듈로 guest-to-guest share/lend 하이퍼콜을 설계한다.
-3. Camera pVM이 캡처 버퍼의 소유권을 AI pVM으로 이전하는 경로를 구현한다.
-4. 이전 전후로 Host stage-2에 해당 페이지가 매핑되지 않음을 확인한다.
-5. 버퍼 핸들과 링 인덱스를 주고받는 제어 채널을 별도로 둔다.
-6. 대조군과 zero-copy 경로의 복사 횟수를 비교해 기록한다.
+1. Camera/AI guest driver와 EL2 event channel 사이의 Host 없는 ping/ack를 구현한다.
+2. Camera workload가 DMA-BUF를 allocate하고 frame marker를 기록한다.
+3. Camera guest driver가 local FD를 resolve하여 AI receiver용 EL2 transfer를 생성한다.
+4. EL2 virtual IRQ를 받은 AI guest driver가 같은 backing을 새로운 local DMA-BUF FD로 import한다.
+5. AI workload가 Camera marker를 read하고 결과 marker를 write한다.
+6. AI 반환 뒤 mapping을 revoke하고 Camera가 원래 FD로 AI marker를 읽는다.
+7. wrong receiver, stale handle, timeout과 두 pVM teardown recovery를 검증한다.
+8. Host stage-2 mapping, Host relay와 frame copy가 없음을 확인한다.
 
-완료 조건: AI pVM이 Camera pVM의 프레임 마커를 읽고, 같은 구간에 대한 Host 접근이 차단되며,
-전달 과정에 데이터 복사가 없음이 확인되어야 한다.
+완료 조건: Camera/AI의 서로 다른 local FD가 같은 backing을 가리키고, AI read/write와 반환 뒤
+Camera read가 성공해야 한다. runtime control은 EL2 event/virtual IRQ만 사용하고, Host에는
+data/control page가 매핑되지 않아야 하며 잘못된 receiver와 revoke 이후 접근이 차단되어야 한다.
 
 ### Phase 10. AI 추론 파이프라인 통합
 
@@ -331,7 +335,7 @@ DMA read, 승인되지 않은 receiver 차단, owner teardown revoke, 회수 후
 | QEMU S2MPU 에뮬레이션과 실물 `SMMUv3`의 차이 | E-3 결과가 실물에서 재현되지 않을 수 있음 | QEMU 버전과 머신 옵션을 결과 문서에 고정 기록. 실물 확장 시 재검증 항목으로 명시 |
 | pKVM의 `vfio-pci` 직접 할당 경로 부재 | 실물 discrete PCIe 장치 검증 불가 | D-7에서 `vfio-platform` descriptor 경로로 QEMU 역할 장치를 검증하고, 실물 PCIe 장치는 PoC 범위 밖 후속 과제로 분리 |
 | pKVM DMA 격리가 upstream 미머지 | 개발 브랜치 갱신 시 결과 재현 불가 | 사용한 커밋 SHA를 결과 문서에 고정 기록 |
-| pVM 간 zero-copy 프리미티브 부재 | Phase 09에서 EL2 확장 개발 필요, 일정과 난이도 급증 | Host 릴레이 대조군을 먼저 확보해 파이프라인을 성립시킨 뒤 zero-copy로 대체 |
+| 표준 pVM 간 FD-passing 부재 | 서로 다른 kernel의 숫자 FD를 직접 전달할 수 없음 | EL2 transfer object를 AI guest driver가 새 local DMA-BUF FD로 import하는 abstraction 구현 |
 | 에뮬레이션 장치의 pVM 내부 드라이버 동작 불확실 | Phase 10 지연 | Phase 08에서 장치 할당 직후 최소 드라이버 기동을 먼저 확인 |
 | E-1에 pvmfw 신뢰 체인 미구성 | 비신뢰 Host에 대한 이미지 신뢰 근거 부족 | Phase 07은 SHA-256 허용 목록으로 변조 거부만 검증. pvmfw/verified boot와 서명 키 연결은 후속 과제로 명시 |
 | OP-TEE 커널 통합 충돌 | Phase 06 지연 | E-2 베이스라인을 먼저 고정하고 pKVM을 단계적으로 적용 |

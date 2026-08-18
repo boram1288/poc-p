@@ -17,8 +17,8 @@
 - **장치의 안전한 할당**: 카메라 역할 장치와 추론 역할 장치를 Camera pVM과 AI pVM에
   각각 할당하고, 장치 소유권과 DMA 접근 범위가 Host 및 다른 pVM과 분리되는지 확인한다.
 - **격리된 AI 파이프라인 구현**: Camera pVM이 수집한 프레임을 Host가 읽을 수 없는
-  protected memory에 저장하고, 버퍼 복사 없이 소유권을 AI pVM으로 이전해 추론을
-  수행한 뒤 추론 결과만 Host Application에 반환한다.
+  DMA-BUF에 저장하고, EL2-mediated export/import로 AI pVM에 새로운 local FD를 만들어
+  버퍼를 복사하지 않고 처리한 뒤 추론 결과만 Host Application에 반환한다.
 - **동적 pVM 수명주기 검증**: Host 요청의 권한과 정책을 확인한 뒤 pVM 이미지를 검증하고,
   Camera/AI pVM의 생성, 모니터링, 장애 격리, 종료 및 자원 회수를 일관되게 수행한다.
 
@@ -40,8 +40,8 @@ QEMU는 pKVM 부팅과 격리 동작을 확인하는 기능 검증 환경이다.
 ## Reference Scenario
 
 비신뢰 Host의 요청으로 Camera pVM과 AI pVM을 동적으로 생성한다. Camera pVM은 USB
-카메라로 프레임을 캡처하고, pKVM이 보호하는 버퍼의 소유권을 AI pVM에 zero-copy 방식으로
-이전한다. AI pVM은 NVIDIA GPU로 추론을 수행하며, 민감한 영상과 모델 중간 데이터 대신
+카메라로 프레임을 캡처하고, pKVM이 보호하는 DMA-BUF를 AI pVM에 zero-copy 방식으로
+export/import한다. AI pVM은 NVIDIA GPU로 추론을 수행하며, 민감한 영상과 모델 중간 데이터 대신
 추론 결과만 Host에 전달한다. 암호화/복호화가 필요한 데이터는 OP-TEE의 Crypto Manager를
 통해 처리한다.
 
@@ -86,6 +86,8 @@ QEMU는 pKVM 부팅과 격리 동작을 확인하는 기능 검증 환경이다.
   Host/non-owner 차단, pVM 간 DMA share/revoke 및 teardown/reassignment 실측
 - [Phase 08 validation evidence](docs/phase-08/validation-results.md): 재현 명령, 필수 marker,
   소스 모듈 변경과 검증 범위/한계
+- [Phase 09 EL2 DMA-BUF channel 설계](docs/phase-09/el2-dmabuf-channel-design.md): Host runtime
+  relay 없는 FD-passing abstraction, C application API/예제와 전체 sequence
 - [work 디렉터리 안내](work/README.md): 소스와 빌드 산출물 관리 규칙
 
 위 성공 조건 6개는 수행 계획의 목표 ID 및 Phase에 매핑되어 있다. 매핑표는
