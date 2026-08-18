@@ -7,6 +7,7 @@
 - 관련 결정: D-4, D-6
 - 실행 도구: `work/src/tools/pvm-manager/`
 - 실행 산출물: `work/build/pvm-manager/`
+- 재수행 설계: [C 기반 userspace VM 관리 프레임워크](userspace-vm-framework-design.md)
 
 ## 제어 경로
 
@@ -79,3 +80,10 @@ SHA-256 허용 목록은 신뢰된 Host 관리자를 전제로 하므로 비신�
 않는다. 제품 수준에서는 서명 키와 pvmfw/verified boot 신뢰 체인에 연결해야 한다.
 
 이 Phase는 메모리와 vCPU 회수를 판정한다. 실제 장치 자원의 회수는 Phase 08에서 다룬다.
+
+## C 프레임워크 기반 재수행
+
+기존 완료 결과는 유지하되 Host Application의 직접 KVM ioctl 의존을 없애기 위해 Phase 07을
+C 기반 userspace VM 관리 프레임워크 위에서 다시 수행한다. 현재는 기능·비기능 요구사항과
+관리 방식 후보를 [설계 문서](userspace-vm-framework-design.md)에 정리했으며, 사용자
+아키텍처 결정 후 상세 설계, 구현 및 E-1 실측 검증을 진행한다.
