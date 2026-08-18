@@ -295,7 +295,41 @@ shell script는 cross-build, initramfs 생성, QEMU 시작과 최종 마커 수�
 Phase 07 장애 격리를 실제 process boundary로 재검증하고, 영구 복구나 full Linux VMM 때문에
 초기 범위가 과도하게 커지는 것을 피한다.
 
-## 12. 결정 후 작업 순서
+## 12. 구현 완료 조건
+
+아래 조건은 모두 필수다. Host unit test나 build 성공만으로는 완료로 판정하지 않고,
+`pkvm-full-clang` kernel을 사용한 E-1 QEMU session에서 runtime 조건까지 통과해야 한다.
+
+| ID | 영역 | 완료 조건 | 필수 증빙 |
+|---|---|---|---|
+| CC-01 | 설계 결정 | D07-F1~F4 선택과 KVM backend process 배치를 문서에서 확정한다. | 결정표와 최종 module/process view |
+| CC-02 | C build | framework, client library, `pvmctl`, C test application과 선택한 process 구조의 실행 component가 arm64 static binary로 build된다. 안 B는 `pvm-runner`를 포함한다. | build rc=0, artifact별 `file` 결과 |
+| CC-03 | KVM 경계 | Application과 public header에 KVM UAPI, `/dev/kvm`, `ioctl()` 참조가 없고 KVM 호출은 private backend에만 존재한다. KVM backend는 VM runner 내부 module로 build 또는 link되지 않는다. | source scan 결과와 target별 link map |
+| CC-04 | control path | 인증, policy, 상태 전이와 lifecycle 요청은 C API를 통해 수행되며 shell script는 build, packaging, QEMU start와 marker 수집에만 사용된다. | C test application 실행 경로와 source scan |
+| CC-05 | guest artifact | guest code, guest workload와 guest image가 서로 다른 artifact로 생성되고 guest workload가 guest image 안에 포함된다. | 세 artifact 경로와 image content listing |
+| CC-06 | guest workload integrity | guest workload verification 성공 후에만 packaging이 진행되고 변조 binary는 packaging 전에 거부된다. | `PVM_FRAMEWORK_WORKLOAD_VERIFIED`, `PVM_FRAMEWORK_WORKLOAD_REJECTED` |
+| CC-07 | guest image integrity | 완성된 guest image가 pVM 생성 전에 검증되고 변조 image는 VM/KVM resource 생성 전에 거부된다. | `PVM_FRAMEWORK_IMAGE_VERIFIED`, `PVM_FRAMEWORK_IMAGE_REJECTED`, 거부 전후 KVM FD=0 |
+| CC-08 | guest execution | pVM boot 후 guest image에 포함된 guest workload binary가 실제로 시작되고 정상 완료된다. | `GUEST_WORKLOAD_STARTED`, `GUEST_WORKLOAD_COMPLETED` |
+| CC-09 | API lifecycle | create, start, status, stop, delete가 public C API에서 성공하고 허용되지 않은 상태 전이는 거부된다. | 상태 전이 log와 negative API result |
+| CC-10 | 인증·policy | 비인가 UID와 허용되지 않은 role 요청이 VM 생성 전에 거부된다. | `PVM_FRAMEWORK_AUTH_DENIED`, `PVM_FRAMEWORK_POLICY_DENIED` |
+| CC-11 | 다중 pVM | Camera와 AI pVM이 동시에 `RUNNING`이고 instance ID, state와 resource가 분리된다. | 역할별 `PVM_FRAMEWORK_RUNNING`과 overlap log |
+| CC-12 | 장애 격리 | Camera 실행 경로 장애 후 Camera는 `FAILED`가 되지만 AI pVM과 controller API는 계속 동작한다. 안 A는 Camera VM 실행 thread/object 실패, 안 B는 Camera VM runner `SIGKILL`로 검증한다. | `PVM_FRAMEWORK_FAULT_ISOLATION_OK` |
+| CC-13 | 정상 종료·회수 | stop/delete 후 해당 VM/vCPU FD와 실행 resource가 사라지고 전체 종료 후 `Mlocked: 0 kB`가 된다. 안 B는 VM runner 종료도 확인한다. | `PVM_FRAMEWORK_STOPPED`, `PVM_FRAMEWORK_RESOURCE_RECOVERY_OK` |
+| CC-14 | E-1 실측 | 동일 QEMU session에서 protected nVHE 초기화와 CC-06~CC-13이 모두 통과하며 timeout, kernel panic과 unexpected error가 없다. | QEMU rc=0, `PVM_FRAMEWORK_VALIDATION_OK`, 전체 console log |
+| CC-15 | 문서·재현성 | build, packaging, 실행 명령, kernel/QEMU version, artifact digest와 log 경로가 Phase 07 문서에 기록된다. | README 결과표와 재현 명령 |
+
+### 최종 판정 규칙
+
+- CC-01~CC-15 중 하나라도 실패하거나 증빙이 없으면 상태는 **진행 중**이다.
+- `PVM_FRAMEWORK_VALIDATION_OK` marker는 개별 검증을 모두 확인한 최종 C test application만
+  출력한다.
+- gcc kernel cross-validation, OP-TEE와 TA 호출은 완료 조건이 아니다.
+- QEMU TCG 실측은 기능 검증이며 실물 hardware의 성능 또는 security assurance를 의미하지
+  않는다.
+- 모든 조건을 실측한 뒤에만 Phase 07 C framework 재수행 결과를 완료로 기록하고 관련 source,
+  문서와 증빙 metadata를 completion commit으로 push한다.
+
+## 13. 결정 후 작업 순서
 
 1. 선택 결과로 기능·비기능 요구사항의 **제안** 항목을 확정하거나 제외한다.
 2. public C API, IPC protocol, 상태 머신, 오류·rollback 상세 설계를 작성한다.

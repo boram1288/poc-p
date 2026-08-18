@@ -88,4 +88,6 @@ SHA-256 허용 목록은 신뢰된 Host 관리자를 전제로 하므로 비신�
 기존 완료 결과는 유지하되 Host Application의 직접 KVM ioctl 의존을 없애기 위해 Phase 07을
 C 기반 userspace VM 관리 프레임워크 위에서 다시 수행한다. 현재는 기능·비기능 요구사항과
 관리 방식 후보를 [설계 문서](userspace-vm-framework-design.md)에 정리했으며, 사용자
-아키텍처 결정 후 상세 설계, 구현 및 E-1 실측 검증을 진행한다.
+아키텍처 결정 후 상세 설계, 구현 및 E-1 실측 검증을 진행한다. 재수행 완료 여부는 설계
+문서의 [구현 완료 조건](userspace-vm-framework-design.md#12-구현-완료-조건) CC-01~CC-15를
+모두 실측한 경우에만 인정한다.
