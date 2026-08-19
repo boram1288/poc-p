@@ -21,6 +21,7 @@ Trusted Access 전용 기능, OP-TEE, TA와 Secure Partition은 요구하거나 
 - 실행 환경: E-3 커스텀 QEMU 10.0.0, `virt,iommu=smmuv3`, pKVM protected mode
 - 입력/추론 대체: Open Model Zoo 동영상 frame replay와 사전 생성 detection oracle
 - Trusted Access: 요구하거나 사용하지 않음
+- How-to 순차 재검수: 통과 (2026-08-19)
 
 ## 1. 검증 범위 이해
 
@@ -684,3 +685,36 @@ Negative marker는 `PVM_VISION_LAYOUT_REJECT_OK`, `PVM_VISION_MUTATION_REJECT_OK
 - 객체 탐지 정확도, FPS, latency, backpressure와 production reconnect는 판정하지 않았다.
 - VSOCK guest 부팅 중 알려진 pKVM MMIO guard `WARN_ON_ONCE`가 관찰되지만 queue 초기화, 왕복,
   guest 종료와 회수에 영향은 없었다. 완료 조건이 금지한 panic/Oops/BUG는 없었다.
+
+## 20. How-to 순차 재검수 기록
+
+2026-08-19에 root commit `2807351379c6b2fdd3b5fc29adcf951455ca68cb`에서 이 문서의
+2~13절을 순서대로 다시 수행했다. 이미 고정 digest를 만족한 kernel/QEMU/kvmtool은 각 절의
+fast-path를 사용했다. package 재설치, repository 재-clone과 동일 source의 full rebuild는
+수행하지 않았다. fixture는 CPU demo 두 번을 실제로 다시 실행했고, runtime/initramfs는
+source에서 다시 빌드했다.
+
+| 절 | 재검수 결과 |
+|---|---|
+| 2~3 Host/source | 필수 명령 8개 확인, root ancestor 검사 통과, pKVM `6763e27c1ad0` 일치 |
+| 4 kernel | PV IOMMU/PVIOMMU/DMA share/VSOCK config와 Image digest 일치 |
+| 5 QEMU | version/digest 일치, 새 smoke에서 PV SMMUv3와 assignable device 2개 확인 |
+| 6 kvmtool | arm64 ELF, commit `6866a248977d`, binary digest 일치 |
+| 7 fixture | demo 2회 동일, class `0,1,2`, frame/oracle digest 일치, offline verifier 통과 |
+| 8 build | native unit test, ARM workload, 두 module과 Host/guest initramfs 재빌드 통과 |
+| 9 정상 E-3 | Camera/AI/Host 각각 30 frame, 결과 oracle 일치, RC `0/0/0` |
+| 10 negative | layout/mutation/hash/mismatch/duplicate-replay 거부와 Host allowlist 통과 |
+| 11 fault | Camera/AI/Host 연결 상실 처리, RC `0/0/0`, `Mlocked: 0 kB` |
+| 12 회귀 | unit, VSOCK smoke, 10-frame E2E, channel fault, EL2 primitive 모두 통과 |
+| 13 최종 판정 | 여섯 log의 panic/Oops/BUG 0건, teardown/timeout 뒤 `Mlocked: 0 kB` |
+
+재검수에서 사용한 신규 log와 SHA-256은 다음과 같다.
+
+| log | SHA-256 |
+|---|---|
+| `work/build/pkvm-qemu/console-phase10-prerequisite-e3-review.log` | `9b481292a6e7cb0880dc6451f88c965f89050204f250209c250cf6b834edec02` |
+| `work/build/vision-pipeline/console-vision-pipeline-manual.log` | `e509b07843d2b1fba7c95b3111c79ab864e93ced887c17d016cda140807b9194` |
+| `work/build/vision-pipeline/console-vision-fault-manual.log` | `85dd117f5ae378fc4554b0b17d3e3fa018f39363824a0d7d5b956c17c86d0c53` |
+
+Phase 09-b 회귀 log는 18절에 기록된 경로를 새 실행으로 덮어썼다. wrapper terminal marker와
+log 내부 완료 marker를 모두 확인했다. 문서 명령의 수정이 필요한 실패는 발견되지 않았다.
