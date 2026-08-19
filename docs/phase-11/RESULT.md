@@ -134,25 +134,6 @@ Host/guest interface와 관찰 가능한 반환값으로 축소했고, 그 범�
 | source video SHA-256 | `452b11b7e0efbd019f1d9570d0c790e90416ad4ad29eec6003872d08443140ef` |
 | `frames.bin` / `oracle.bin` SHA-256 | `655cd5aa44c2585ee435466015bdb38f6abbdb8623877d92847bd02aad415030` / `37905752542e5c43551cc18e911ed4c0394333f25882b7c9ef4890ff5ace177f` |
 
-### 프로젝트 적용 패치
-
-| Directory | Git URL | Last commit | 반영된 패치 갯수 |
-|---|---|---|---:|
-| `work/src/pkvm-linux` | `git@github.com:boram1288/pkvm-linux.git` | `6763e27c1ad00e0f5caf6e6cde5fcb33976e50e0` | 725 |
-| `work/src/kvmtool` | `git@github.com:boram1288/kvmtools.git` | `6866a248977d16bc293c6f4f6609daa4f465b073` | 1 |
-| `work/src/optee-pkvm/qemu` | `git@github.com:boram1288/qemu.git` | `5b3965e9c44ce7e8135f2a6ef7680eb563ab8bef` | 2 |
-
-패치 수는 각 외부 소스의 고정 upstream 기준점부터 현재 HEAD까지 이 프로젝트를 위해 추가한
-commit 수다. pKVM Linux는 `v6.18` 이후 전체 727 commit에서 소스 변경이 없는 README 전용
-2건을 제외한 725건이다. 이 중 Phase 02의 초기 검증 stack이 721건이고 Phase 06-b, 08, 09,
-09-b에서 code patch 4건을 추가했다. kvmtool은 upstream `origin/master`의 `f67bc0b` 이후 1건,
-QEMU는 tag `v10.0.0` 이후 2건이다.
-
-root `poc-p`는 이 프로젝트 자체의 source/document 저장소이므로 외부 upstream에 적용한 patch
-수에서 제외했다. OP-TEE, TF-A, U-Boot, Buildroot, DTC와 나머지 독립 Git checkout은 고정
-upstream revision을 수정 없이 사용했으므로 프로젝트 적용 patch는 0건이다. `work/build` 아래
-download/cache repository도 적용 patch 집계에서 제외했다.
-
 Phase별 더 세부적인 build input과 digest는 각 Phase 문서를 기준으로 한다. root commit 값은
 Phase 11 문서를 작성하기 직전까지 모든 기능 검증과 Phase 10 수동 재검수 기록을 포함한 증거
 snapshot이다. Phase 11 완료 commit은 이 문서 자체를 포함하므로 저장소 이력으로 고정한다.
