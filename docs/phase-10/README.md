@@ -10,6 +10,8 @@
 
 - Phase 08의 추론 역할 장치 할당 성공과 pVM 내부 드라이버 기동 확인
 - Phase 09의 프레임 전달 경로 성립
+- Phase 09-b의 Host↔Camera command, Camera↔AI DMA-BUF와 별도 size/format metadata channel,
+  AI↔Host allowlist result protocol 성립
 - AI pVM에 넣을 최소 추론 모델과 판정 가능한 입력 프레임
 
 D-9 확정으로 이 Phase는 QEMU 환경에서 수행한다. GPU 가속은 사용하지 않는다. AI pVM 안의
@@ -19,11 +21,16 @@ D-9 확정으로 이 Phase는 QEMU 환경에서 수행한다. GPU 가속은 사�
 
 1. AI pVM 안에서 추론 런타임을 기동한다. GPU 가속 없이 CPU 경로로 수행한다.
 2. Phase 09로 전달받은 프레임에 대해 추론을 수행한다.
-3. 모델 가중치와 중간 데이터가 AI pVM 밖으로 나가지 않음을 확인한다.
-4. 추론 결과만 Host Application으로 반환하는 경로를 구현한다. 반환 대상 필드를 명시적으로
-   허용 목록으로 관리한다.
-5. 캡처, 전달, 추론, 결과 반환을 반복 실행하고 Host Application의 종료 명령으로 정지한다.
-6. 파이프라인 종료 후 두 pVM의 장치와 메모리 자원을 회수한다.
+3. Phase 09-b의 deterministic result adapter를 CPU inference adapter로 교체하고 동일한
+   session/request/frame protocol을 유지한다.
+4. inference adapter가 Phase 09-b의 검증된 buffer descriptor(size, FOURCC, dimension,
+   plane offset/stride/size)만 입력 layout으로 사용하고, 이를 imported DMA-BUF의
+   kernel-reported actual size와 대조하며 buffer 내용으로 format을 추정하지 않게 한다.
+5. 모델 가중치와 중간 데이터가 AI pVM 밖으로 나가지 않음을 확인한다.
+6. Phase 09-b의 반환 경로를 재사용해 추론 결과만 Host Application으로 보낸다. 반환 대상
+   필드를 명시적으로 허용 목록으로 관리한다.
+7. 캡처, 전달, 추론, 결과 반환을 반복 실행하고 Host Application의 종료 명령으로 정지한다.
+8. 파이프라인 종료 후 두 pVM의 장치와 메모리 자원을 회수한다.
 
 ## 완료 조건
 

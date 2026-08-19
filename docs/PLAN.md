@@ -1,7 +1,7 @@
 # PoC 수행 계획
 
 - 프로젝트: Linux pKVM 기반 Protected VM 격리 검증
-- 계획 기준일: 2026-08-14
+- 계획 기준일: 2026-08-19
 - 상위 기준: [README](../README.md)의 프로젝트 목표와 성공 조건
 - 실행 원칙: 각 Phase의 선행 조건, 작업, 완료 조건, 증빙을 순서대로 충족한다.
 - 경로 원칙: 소스는 `work/src`, 생성물과 로그는 `work/build`, 문서는 `docs/phase-{nn}`에 둔다.
@@ -37,7 +37,12 @@ Host로부터 카메라 영상과 AI 모델/추론 데이터를 격리한 상태
 | G-8 | 장치 직접 할당 | 카메라 역할 장치와 추론 역할 장치를 각 pVM에 배타적으로 할당하고 회수 | 08 | 완료 |
 | G-9 | DMA 격리 | S2MPU가 있는 환경에서 장치 DMA 접근 차단 확인 | 08 | 완료 |
 | G-10 | cross-pVM DMA-BUF | Camera DMA-BUF를 Host runtime relay 없이 AI pVM이 새 local FD로 import하여 read/write | 09 | 완료 |
+| G-10B | cross-pVM buffer descriptor | Camera가 buffer 크기, FOURCC, dimension과 plane layout을 별도 Host-bypass message channel로 보내고 AI가 imported DMA-BUF와 대조 검증 | 09-b | 미착수 |
 | G-11 | AI 추론 결과 반환 | AI pVM이 CPU 경로로 추론을 완료하고 허용된 결과만 Host Application에 반환 | 10 | 미착수 |
+
+Phase 09-b는 G-10의 Camera↔AI buffer 경로에 G-10B의 별도 metadata/control channel을 더해
+사용자 공간 API로 정리하고, G-11에 필요한 Host↔Camera command와 AI↔Host result channel을
+Phase 10 전에 검증하는 연결 Phase다.
 
 G-8과 G-11의 완료 조건은 D-9 확정에 따라 QEMU 에뮬레이션 장치 기준으로 판정한다. 실물
 USB 카메라와 NVIDIA GPU는 이 PoC의 범위에서 제외했다. 상세는 4절의 D-9와 [Phase 08의
@@ -50,7 +55,7 @@ USB 카메라와 NVIDIA GPU는 이 PoC의 범위에서 제외했다. 상세는 4
 | 1. pKVM 커널과 OP-TEE가 동일 시스템에서 초기화/동작 | G-1, G-2, G-6 | 02, 03, 06 |
 | 2. Camera/AI pVM 동시 실행과 메모리 격리 | G-3, G-4, G-5 | 04, 05 |
 | 3. 카메라/추론 역할 장치 직접 할당, 회수, 배타적 소유권 전환 | G-8, G-9 | 08 |
-| 4. 카메라 프레임의 Host 비노출 zero-copy 전달 | G-10 | 09 |
+| 4. 카메라 프레임의 Host 비노출 zero-copy 전달과 buffer descriptor 검증 | G-10, G-10B | 09, 09-b |
 | 5. CPU 경로 추론 완료와 허용된 결과만 반환 | G-11 | 10 |
 | 6. pVM 종료 후 장치/메모리/vCPU 자원 회수 | G-5, G-7, G-8 | 05, 07, 08 |
 
@@ -77,6 +82,7 @@ Scenario의 GPU 추론을 AI pVM 안의 CPU 추론으로 대체한 것이다.
 - Host 요청 기반 pVM 동적 생성, 이미지 검증, 종료, 자원 회수
 - QEMU 에뮬레이션 장치의 pVM 직접 할당과 S2MPU 기반 DMA 격리
 - Camera pVM DMA-BUF의 EL2-mediated export와 AI pVM local FD import
+- Camera↔AI buffer size/format/plane descriptor의 별도 EL2 message channel
 - AI pVM의 추론 수행과 결과만 반환하는 경로
 
 제외 범위:
@@ -125,6 +131,7 @@ E-3 결과에는 에뮬레이션 환경임을 함께 표기한다.
 | D-7 | QEMU 역할 장치는 `vfio-platform` + `VFIO_PKVM_IOMMU` + KVM VFIO pVIOMMU + EL2 PV IOMMU 경로로 직접 할당. `vfio-pci`와 nested driver는 사용하지 않음 | 확정 | Phase 08에서 Camera/AI용 QEMU edu 두 장치의 배타 할당, DMA 격리, 회수와 재할당을 실측 |
 | D-8 | Phase 08 EL2 shared-buffer manager에 event queue/virtual IRQ를 추가하고 Camera DMA-BUF를 AI의 새 local FD로 import. runtime Host relay, `virtio-vsock`, Secure Partition/TA는 사용하지 않음 | 확정 | 표준 VSOCK은 Host backend를 통하고 현재 pKVM FF-A proxy는 VM-to-VM routing을 제공하지 않음 |
 | D-9 | E-3는 H-6(QEMU `virt,iommu=smmuv3`) 단일 환경. 실물 하드웨어는 PoC 범위에서 제외 | 확정 | Phase 08 조사. 실물 후보는 모두 미검증 리스크가 남고 조달 비용이 큼 |
+| D-10 | Host↔Camera와 AI↔Host control/result는 role별 CID의 `AF_VSOCK` 사용. Camera↔AI는 frame backing용 Phase 09 EL2 DMA-BUF와 size/format/plane descriptor용 별도 EL2 message queue를 병행하고 transfer ID로 결합. 세 구간은 하나의 versioned userspace session/request/frame protocol로 묶음 | 확정 | Host가 endpoint인 구간과 Host를 우회해야 하는 pVM 간 buffer/metadata 구간의 신뢰 경계를 분리하고 Phase 10의 결과 반환 API를 사전 검증 |
 
 D-7에서 사용하는 QEMU edu PCI function은 DMA engine 역할을 하지만, pKVM assignment
 identity는 `pkvm,device-assignment`가 기술한 `10000000.pkvm-edu`와
@@ -155,6 +162,7 @@ DMA-BUF FD로 import한다. FF-A virtual instance 구현은 후속 표준화 과
 | 07 | 동적 pVM 수명주기 관리 | E-1 | 완료 | [phase-07](phase-07/README.md) |
 | 08 | 장치 직접 할당과 DMA 격리 | E-3 | 완료 | [phase-08](phase-08/README.md) |
 | 09 | pVM 간 DMA-BUF export/import | E-1, E-3 | 완료 | [phase-09](phase-09/README.md) |
+| 09-b | Host/Camera/AI 사용자 공간 end-to-end 통신 | E-1, E-3 | 미착수 | [phase-09-b](phase-09-b/README.md) |
 | 10 | AI 추론 파이프라인 통합 | E-3 | 미착수 | [phase-10](phase-10/README.md) |
 | 11 | 결과 종합 및 요구사항 매핑 | - | 진행 중 | [phase-11](phase-11/README.md) |
 
@@ -278,21 +286,53 @@ DMA read, 승인되지 않은 receiver 차단, owner teardown revoke, 회수 후
 Camera read가 성공해야 한다. runtime control은 EL2 event/virtual IRQ만 사용하고, Host에는
 data/control page가 매핑되지 않아야 하며 잘못된 receiver와 revoke 이후 접근이 차단되어야 한다.
 
+### Phase 09-b. 사용자 공간 end-to-end 통신
+
+1. Host↔Camera와 AI↔Host의 command/result transport로 role별 CID를 가진 `AF_VSOCK`을
+   검증한다.
+2. version, session ID, request ID, frame sequence와 bounded payload를 가진 공통 C protocol을
+   구현한다.
+3. Host가 Camera에 CONFIG/CAPTURE/STOP을 보내고 Camera가 ACK/STATUS/ERROR를 반환하게 한다.
+4. Camera↔AI frame backing은 Phase 09의 `libpvm_buffer`와 EL2 DMA-BUF 경로로 전달한다.
+5. Camera↔AI buffer size, FOURCC, dimension과 plane layout은 별도 `libpvm_message`/EL2 message
+   queue로 전달하고 transfer ID로 DMA-BUF와 결합한다. AI는 descriptor의 size/layout을
+   `libpvm_buffer` import UAPI가 반환한 실제 DMA-BUF 크기와 대조한다. 두 경로 모두 Host relay를
+   두지 않는다.
+6. Host가 AI에 CONFIG/STOP을 보내고 AI가 allowlist RESULT/ACK/ERROR만 반환하게 한다.
+7. 10회 end-to-end 반복, malformed/replay/wrong-CID/stale-token과 descriptor mismatch/bounds
+   거부, 세 endpoint 장애 뒤
+   자원 회수를 검증한다.
+8. Host-facing protocol에 frame, Camera↔AI descriptor, local FD, PA/IPA/IOVA, EL2 token,
+   model/intermediate data가
+   노출되지 않음을 정적/동적으로 확인한다.
+
+완료 조건: 세 사용자 공간 구간이 하나의 session/request/frame sequence로 상관되고 10회 반복과
+negative/fault 시험이 모두 통과해야 한다. Camera↔AI buffer와 metadata는 서로 독립된 EL2 channel로
+Host relay/copy 없이 전달되고, AI는 descriptor를 실제 DMA-BUF 크기/format/plane bounds와 대조한
+뒤에만 payload를 읽어야 한다.
+Host에는 명령·ACK·상태·오류와 허용된 결과만 보여야 하며 종료 뒤 모든 통신/lease/VM 자원이
+회수되어야 한다. 상세 판정은 [Phase 09-b README](phase-09-b/README.md)에 있다.
+
 ### Phase 10. AI 추론 파이프라인 통합
 
 1. AI pVM 안에서 추론 런타임을 기동한다. GPU 가속 없이 CPU 경로로 수행한다.
 2. Phase 09로 전달받은 프레임에 대해 추론을 수행한다.
-3. 모델 가중치와 중간 데이터가 AI pVM 밖으로 나가지 않음을 확인한다.
-4. 추론 결과만 Host Application으로 반환하는 경로를 구현한다.
-5. 캡처, 전달, 추론, 결과 반환을 반복 실행하고 종료 명령으로 정지한다.
-6. 파이프라인 종료 후 두 pVM의 장치와 메모리 자원을 회수한다.
+3. Phase 09-b의 deterministic result adapter를 CPU inference adapter로 교체하고 동일한
+   Host/Camera/AI protocol을 회귀 검증한다.
+4. Phase 09-b의 descriptor size, FOURCC, dimension과 plane bounds를 imported DMA-BUF 실제
+   크기와 대조하고 검증된 layout만 inference adapter에 전달한다.
+5. 모델 가중치와 중간 데이터가 AI pVM 밖으로 나가지 않음을 확인한다.
+6. Phase 09-b의 반환 경로를 재사용해 추론 결과만 Host Application으로 보내고 최종 result
+   allowlist를 검증한다.
+7. 캡처, 전달, 추론, 결과 반환을 반복 실행하고 종료 명령으로 정지한다.
+8. 파이프라인 종료 후 두 pVM의 장치와 메모리 자원을 회수한다.
 
 완료 조건: 반복 실행에서 추론 결과가 Host에 도달하고, 영상 원본과 모델 데이터에 대한 Host
 접근이 모두 차단되어야 한다. GPU 가속 성립 여부는 판정 대상이 아니다.
 
 ### Phase 11. 결과 종합
 
-1. G-1부터 G-11까지 결과와 증빙을 연결한다.
+1. G-10B를 포함해 G-1부터 G-11까지 결과와 증빙을 연결한다.
 2. README 성공 조건 6개에 대한 달성 여부를 판정한다.
 3. 기능 검증과 보안 보증의 경계를 명시한다.
 4. 재현 명령, 커밋, 툴체인과 로그 위치를 고정한다.
