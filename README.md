@@ -2,11 +2,13 @@
 
 이 저장소는 Linux v6.18에 pKVM 패치를 적용하고, QEMU에서 protected VM(pVM) 기반의 신뢰
 실행 환경을 단계적으로 검증하는 PoC다. 최종적으로는 비신뢰 Host로부터 카메라 영상과 AI
-모델/추론 데이터를 격리하면서, 두 pVM이 각자 할당받은 장치로 영상 추론 파이프라인을
+처리 데이터를 격리하면서 Camera pVM → AI pVM → Host Application 영상 분석 파이프라인을
 수행하는 것을 목표로 한다.
 
 장치 할당과 DMA 격리는 D-9 결정에 따라 S2MPU를 에뮬레이션하는 QEMU 환경에서 검증한다.
 실물 USB 카메라와 discrete NVIDIA GPU를 사용하는 검증은 이 PoC의 범위에서 제외했다.
+Phase 10은 공개 객체 탐지 동영상의 frame과 사전 생성 detection oracle로 두 하드웨어 역할을
+재생한다.
 
 ## 프로젝트 목표
 
@@ -16,9 +18,9 @@
   구성하고, pVM 실행 중에도 OP-TEE의 암호화/복호화 서비스를 사용할 수 있음을 확인한다.
 - **장치의 안전한 할당**: 카메라 역할 장치와 추론 역할 장치를 Camera pVM과 AI pVM에
   각각 할당하고, 장치 소유권과 DMA 접근 범위가 Host 및 다른 pVM과 분리되는지 확인한다.
-- **격리된 AI 파이프라인 구현**: Camera pVM이 수집한 프레임을 Host가 읽을 수 없는
+- **격리된 영상 분석 파이프라인 구현**: Camera pVM이 재생한 프레임을 Host runtime이 읽지 않는
   DMA-BUF에 저장하고, EL2-mediated export/import로 AI pVM에 새로운 local FD를 만들어
-  버퍼를 복사하지 않고 처리한 뒤 추론 결과만 Host Application에 반환한다.
+  버퍼를 복사하지 않고 처리한 뒤 bounded 객체 탐지 결과만 Host Application에 반환한다.
 - **동적 pVM 수명주기 검증**: Host 요청의 권한과 정책을 확인한 뒤 pVM 이미지를 검증하고,
   Camera/AI pVM의 생성, 모니터링, 장애 격리, 종료 및 자원 회수를 일관되게 수행한다.
 
@@ -31,7 +33,7 @@
 | OP-TEE | Secure World에서 카메라 영상의 암호화/복호화 등 보안 서비스 제공 |
 | 카메라 역할 장치 | Camera pVM에 할당되는 영상 입력 장치 |
 | 추론 역할 장치 | AI pVM에 할당되는 추론 담당 장치 |
-| Camera pVM / AI pVM | 카메라 캡처와 AI 추론을 분리하여 최소 권한으로 실행하는 보호 Workload |
+| Camera pVM / AI pVM | 영상 입력 replay와 객체 탐지 결과 생성을 분리하여 최소 권한으로 실행하는 보호 Workload |
 
 QEMU는 pKVM 부팅과 격리 동작을 확인하는 기능 검증 환경이다. 장치 할당과 DMA 격리는
 `virt,iommu=smmuv3`로 S2MPU를 에뮬레이션하는 QEMU 환경에서 판정하며, 두 역할 장치도
@@ -58,8 +60,10 @@ export/import한다. AI pVM은 NVIDIA GPU로 추론을 수행하며, 민감한 �
 1. Linux v6.18 + pKVM 커널과 OP-TEE가 동일 시스템에서 초기화되고 각각 정상 동작한다.
 2. Camera pVM과 AI pVM을 동시에 생성/실행하며 Host와 각 pVM의 메모리 접근을 격리한다.
 3. 카메라 역할 장치와 추론 역할 장치의 직접 할당, 회수 및 배타적 소유권 전환을 검증한다.
-4. 카메라 프레임을 Host에 노출하지 않고 Camera pVM에서 AI pVM으로 zero-copy 전달한다.
-5. AI pVM이 CPU 경로로 추론을 완료하고 허용된 추론 결과만 Host Application에 반환한다.
+4. 카메라 역할 frame을 E-3 runtime Host에 relay하지 않고 Camera pVM에서 AI pVM으로
+   zero-copy 전달한다.
+5. Camera pVM이 공개 동영상 frame을 재생하고 AI pVM이 frame과 결합된 허용 목록의 객체 탐지
+   결과만 Host Application에 반환한다.
 6. pVM 종료 후 장치, 메모리 및 vCPU 자원이 안전하게 회수된다.
 
 ### 판정 기준
@@ -68,13 +72,17 @@ export/import한다. AI pVM은 NVIDIA GPU로 추론을 수행하며, 민감한 �
 카메라 역할 장치에, NVIDIA GPU가 추론 역할 장치에 대응한다. 판정 대상은 장치 할당 경로,
 배타적 소유권 전환, DMA 격리, 회수와 재할당이 성립하는지다.
 
-성공 조건 5는 Reference Scenario의 GPU 추론을 AI pVM 안의 CPU 추론으로 대체한 것이다.
-판정 대상은 데이터 보호 경계와 결과 반환 경로가 성립하는지다.
+성공 조건 5는 Reference Scenario의 카메라/GPU 처리를 Open Model Zoo 동영상 frame과 사전 생성
+detection oracle replay로 대체한 것이다. 판정 대상은 입력 frame과 결과의 상관관계, 데이터
+보호 경계와 결과 반환 경로가 성립하는지다. 실제 model inference와 model/tensor 기밀성은
+판정하지 않는다.
 
-실제 USB 카메라의 캡처 동작과 NVIDIA GPU 가속 추론은 이 PoC에서 검증하지 않는다.
+실제 USB 카메라의 캡처 동작, NVIDIA GPU 가속 추론과 AI pVM 내부 실제 model inference는 이
+PoC에서 검증하지 않는다.
 
-이 대체 판정은 D-9 결정에 따른 것이다. 근거는 [하드웨어 후보
-조사](docs/phase-08/hardware-candidates.md)에 있다. 실장치 검증은 후속 과제로 분리했다.
+이 대체 판정은 D-9와 D-11 결정에 따른 것이다. 근거는 [하드웨어 후보
+조사](docs/phase-08/hardware-candidates.md)와 [Phase 10 계획](docs/phase-10/README.md)에 있다.
+실장치와 실제 inference 검증은 후속 과제로 분리했다.
 
 ## 문서 구조
 
@@ -93,6 +101,8 @@ export/import한다. AI pVM은 NVIDIA GPU로 추론을 수행하며, 민감한 �
 - [Phase 09-b 사용자 공간 통신 계획](docs/phase-09-b/README.md): Host↔Camera command,
   Camera↔AI protected DMA-BUF와 별도 size/format metadata channel, AI↔Host allowlist result를
   하나의 end-to-end session으로 묶는 구현·검증 계획
+- [Phase 10 Reference Scenario](docs/phase-10/README.md): 공개 객체 탐지 동영상 frame과
+  detection oracle로 camera/GPU 역할을 재생한 end-to-end 구현·검증 결과
 - [work 디렉터리 안내](work/README.md): 소스와 빌드 산출물 관리 규칙
 
 위 성공 조건 6개는 수행 계획의 목표 ID 및 Phase에 매핑되어 있다. 매핑표는

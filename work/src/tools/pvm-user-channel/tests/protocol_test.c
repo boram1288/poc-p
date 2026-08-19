@@ -59,6 +59,23 @@ int main(void)
 	assert(pvm_frame_desc_validate(&desc) == 0);
 	desc.planes[0].size++;
 	assert(pvm_frame_desc_validate(&desc) == -EINVAL);
+	desc.planes[0].size = 4096; desc.fourcc = PVM_FOURCC_BGR3;
+	desc.width = 32; desc.height = 32; desc.planes[0].stride = 96;
+	desc.planes[0].size = 3072;
+	assert(pvm_frame_desc_validate(&desc) == 0);
+	desc.planes[0].stride = 95;
+	assert(pvm_frame_desc_validate(&desc) == -EINVAL);
+	{
+		struct pvm_user_detection_result detection_result = {
+			.frame_seq = 1, .detection_count = 1,
+			.detections = {{ .class_id = 2, .confidence_q16 = 32768,
+				.xmin_q16 = 1, .ymin_q16 = 2,
+				.xmax_q16 = 3, .ymax_q16 = 4 }},
+		};
+		assert(pvm_user_detection_result_validate(&detection_result) == 0);
+		detection_result.detections[0].xmax_q16 = 0;
+		assert(pvm_user_detection_result_validate(&detection_result) == -EINVAL);
+	}
 	{
 		struct pvm_user_session_state state = { 0 };
 		struct pvm_user_hello hello = { PVM_USER_ROLE_CAMERA, 4102, 2, 0 };

@@ -9,9 +9,10 @@
 ## 1. 목표와 검증 수준
 
 이 계획은 README가 정의한 최종 목표를 Phase 단위로 분해한 것이다. 최종 목표는 비신뢰
-Host로부터 카메라 영상과 AI 모델/추론 데이터를 격리한 상태로, Camera pVM과 AI pVM이 각자
-할당받은 장치로 영상 추론 파이프라인을 수행하는 것이다. 그 앞 단계로 pKVM의 격리 경계를
-기능 수준에서 먼저 확인하고, 이어서 장치와 데이터 경로로 확장한다.
+Host로부터 카메라 영상과 AI 처리 데이터를 격리한 상태로 Camera pVM → AI pVM → Host
+Application 영상 분석 파이프라인을 수행하는 것이다. 실물 camera/GPU가 없는 현재 PoC에서는
+공개 동영상 frame과 객체 탐지 oracle로 두 하드웨어 역할을 재생한다. 그 앞 단계로 pKVM의
+격리 경계를 기능 수준에서 먼저 확인하고, 이어서 장치와 데이터 경로로 확장한다.
 
 ### 1.1 상태 어휘
 
@@ -38,15 +39,17 @@ Host로부터 카메라 영상과 AI 모델/추론 데이터를 격리한 상태
 | G-9 | DMA 격리 | S2MPU가 있는 환경에서 장치 DMA 접근 차단 확인 | 08 | 완료 |
 | G-10 | cross-pVM DMA-BUF | Camera DMA-BUF를 Host runtime relay 없이 AI pVM이 새 local FD로 import하여 read/write | 09 | 완료 |
 | G-10B | cross-pVM buffer descriptor | Camera가 buffer 크기, FOURCC, dimension과 plane layout을 별도 Host-bypass message channel로 보내고 AI가 imported DMA-BUF와 대조 검증 | 09-b | 완료 |
-| G-11 | AI 추론 결과 반환 | AI pVM이 CPU 경로로 추론을 완료하고 허용된 결과만 Host Application에 반환 | 10 | 미착수 |
+| G-11 | 객체 탐지 결과 반환 | Camera pVM이 공개 동영상 frame을 재생하고 AI pVM이 frame hash와 결합된 bounded detection oracle만 Host Application에 반환 | 10 | 완료 |
 
 Phase 09-b는 G-10의 Camera↔AI buffer 경로에 G-10B의 별도 metadata/control channel을 더해
 사용자 공간 API로 정리하고, G-11에 필요한 Host↔Camera command와 AI↔Host result channel을
 Phase 10 전에 검증하는 연결 Phase다.
 
-G-8과 G-11의 완료 조건은 D-9 확정에 따라 QEMU 에뮬레이션 장치 기준으로 판정한다. 실물
-USB 카메라와 NVIDIA GPU는 이 PoC의 범위에서 제외했다. 상세는 4절의 D-9와 [Phase 08의
-하드웨어 후보 조사](phase-08/hardware-candidates.md)에 있다.
+G-8은 D-9에 따라 QEMU 에뮬레이션 장치로 판정하고, G-11은 D-11에 따라 공개 동영상에서 만든
+canonical frame/detection fixture replay로 판정한다. 실물 USB 카메라와 NVIDIA GPU 및 AI pVM
+내부 실제 model inference는 이 PoC의 범위에서 제외했다. 상세는 4절의 D-9/D-11,
+[Phase 08의 하드웨어 후보 조사](phase-08/hardware-candidates.md)와
+[Phase 10 계획](phase-10/README.md)에 있다.
 
 ### 1.3 README 성공 조건과의 매핑
 
@@ -55,8 +58,8 @@ USB 카메라와 NVIDIA GPU는 이 PoC의 범위에서 제외했다. 상세는 4
 | 1. pKVM 커널과 OP-TEE가 동일 시스템에서 초기화/동작 | G-1, G-2, G-6 | 02, 03, 06 |
 | 2. Camera/AI pVM 동시 실행과 메모리 격리 | G-3, G-4, G-5 | 04, 05 |
 | 3. 카메라/추론 역할 장치 직접 할당, 회수, 배타적 소유권 전환 | G-8, G-9 | 08 |
-| 4. 카메라 프레임의 Host 비노출 zero-copy 전달과 buffer descriptor 검증 | G-10, G-10B | 09, 09-b |
-| 5. CPU 경로 추론 완료와 허용된 결과만 반환 | G-11 | 10 |
+| 4. 카메라 역할 frame의 E-3 runtime Host 비노출 zero-copy 전달과 buffer descriptor 검증 | G-10, G-10B | 09, 09-b |
+| 5. 공개 동영상 frame과 결합된 허용 목록의 객체 탐지 결과만 반환 | G-11 | 10 |
 | 6. pVM 종료 후 장치/메모리/vCPU 자원 회수 | G-5, G-7, G-8 | 05, 07, 08 |
 
 G-4는 Host CPU 매핑 경로에 대한 기능 검증이다. G-9를 완료하기 전에는 "Host가 침해되어도
@@ -64,10 +67,12 @@ G-4는 Host CPU 매핑 경로에 대한 기능 검증이다. G-9를 완료하기
 
 성공 조건 3의 카메라 역할 장치와 추론 역할 장치는 QEMU 에뮬레이션 장치다. Reference
 Scenario의 USB 카메라와 NVIDIA GPU가 각각 여기에 대응한다. 성공 조건 5는 Reference
-Scenario의 GPU 추론을 AI pVM 안의 CPU 추론으로 대체한 것이다.
+Scenario의 camera/GPU 처리를 Open Model Zoo 동영상 frame과 사전 생성 detection oracle
+replay로 대체한 것이다.
 
 두 조건 모두 장치 할당 경로, 소유권 전환, DMA 격리 로직, 결과 반환 경로가 성립하는지를
-판정한다. 실제 USB 카메라와 NVIDIA GPU에 대한 동작과 기밀성은 이 PoC에서 주장하지 않는다.
+판정한다. 실제 USB 카메라와 NVIDIA GPU에 대한 동작·기밀성, 실제 model inference와
+model/tensor 보호는 이 PoC에서 주장하지 않는다.
 
 ## 2. 범위
 
@@ -83,7 +88,7 @@ Scenario의 GPU 추론을 AI pVM 안의 CPU 추론으로 대체한 것이다.
 - QEMU 에뮬레이션 장치의 pVM 직접 할당과 S2MPU 기반 DMA 격리
 - Camera pVM DMA-BUF의 EL2-mediated export와 AI pVM local FD import
 - Camera↔AI buffer size/format/plane descriptor의 별도 EL2 message channel
-- AI pVM의 추론 수행과 결과만 반환하는 경로
+- 공개 동영상 frame replay와 AI pVM의 bounded detection oracle 반환 경로
 
 제외 범위:
 
@@ -95,6 +100,7 @@ Scenario의 GPU 추론을 AI pVM 안의 CPU 추론으로 대체한 것이다.
 - 실물 arm64 하드웨어 조달과 실장치 검증
 - 실제 USB 카메라와 discrete NVIDIA GPU의 pVM 할당
 - GPU 가속 추론과 pVM 내부 GPU 드라이버 기동
+- AI pVM 내부 실제 CPU/model inference와 model/intermediate tensor 기밀성 검증
 
 제외 범위는 기능 성립을 확인한 뒤의 과제로 본다. 특히 성능은 zero-copy 경로가 성립하는지만
 확인하고 처리량과 지연은 측정 대상에서 뺀다.
@@ -107,7 +113,7 @@ Scenario의 GPU 추론을 AI pVM 안의 CPU 추론으로 대체한 것이다.
 |---|---|---|---|---|
 | E-1 기능 검증 | 커널/pVM 기능 경로 확인 | x86_64, QEMU 4.2.1 TCG, `virt,virtualization=on`, OP-TEE 없음 | 02~05, 07 | 사용 중 |
 | E-2 통합 검증 | Secure World 공존 확인 | QEMU 8.2.2, TF-A v2.13-rc0, OP-TEE 4.7.0, pKVM 커널 | 06 | 사용 완료 |
-| E-3 장치 할당 및 DMA 격리 검증 | 장치 할당, DMA 격리, 추론 파이프라인 확인 | QEMU (SMMUv3 stage-2 지원), `virt,iommu=smmuv3`, pKVM 커널, 에뮬레이션 장치 | 08~10 | 구성 가능 |
+| E-3 장치 할당 및 DMA 격리 검증 | 장치 할당, DMA 격리, fixture 기반 영상 분석 파이프라인 확인 | QEMU (SMMUv3 stage-2 지원), `virt,iommu=smmuv3`, pKVM 커널, 에뮬레이션 장치, 공개 객체 탐지 fixture | 08~10 | 구성 가능 |
 
 E-1 결과는 E-2 또는 E-3의 결과를 대신하지 않는다.
 
@@ -132,6 +138,7 @@ E-3 결과에는 에뮬레이션 환경임을 함께 표기한다.
 | D-8 | Phase 08 EL2 shared-buffer manager에 event queue/virtual IRQ를 추가하고 Camera DMA-BUF를 AI의 새 local FD로 import. runtime Host relay, `virtio-vsock`, Secure Partition/TA는 사용하지 않음 | 확정 | 표준 VSOCK은 Host backend를 통하고 현재 pKVM FF-A proxy는 VM-to-VM routing을 제공하지 않음 |
 | D-9 | E-3는 H-6(QEMU `virt,iommu=smmuv3`) 단일 환경. 실물 하드웨어는 PoC 범위에서 제외 | 확정 | Phase 08 조사. 실물 후보는 모두 미검증 리스크가 남고 조달 비용이 큼 |
 | D-10 | Host↔Camera와 AI↔Host control/result는 role별 CID의 `AF_VSOCK` 사용. Camera↔AI는 frame backing용 Phase 09 EL2 DMA-BUF와 size/format/plane descriptor용 별도 EL2 message queue를 병행하고 transfer ID로 결합. 세 구간은 하나의 versioned userspace session/request/frame protocol로 묶음 | 확정 | Host가 endpoint인 구간과 Host를 우회해야 하는 pVM 간 buffer/metadata 구간의 신뢰 경계를 분리하고 Phase 10의 결과 반환 API를 사전 검증 |
+| D-11 | Phase 10의 camera/GPU 역할은 Open Model Zoo `person-bicycle-car-detection.mp4`의 canonical frame과 `person-vehicle-bike-detection-2000` CPU demo가 만든 detection oracle로 재생. AI pVM은 실제 inference 대신 검증된 frame hash로 oracle을 조회 | 확정 | 실물 camera/GPU와 pVM용 inference runtime 없이도 Reference Scenario의 통신·격리·결과 상관관계를 결정적으로 검증하고 미검증 하드웨어/모델 보안 주장을 분리 |
 
 D-7에서 사용하는 QEMU edu PCI function은 DMA engine 역할을 하지만, pKVM assignment
 identity는 `pkvm,device-assignment`가 기술한 `10000000.pkvm-edu`와
@@ -139,9 +146,11 @@ identity는 `pkvm,device-assignment`가 기술한 `10000000.pkvm-edu`와
 `VFIO_PKVM_IOMMU`, `KVM_DEV_TYPE_VFIO`, `KVM_DEV_VFIO_PVIOMMU`로 pVM에 연결한다. Guest는
 EL2-managed PV IOMMU domain과 virtual SID를 사용하며 SMMU table을 직접 관리하지 않는다.
 
-D-9 확정으로 실물 하드웨어 후보 H-1~H-5는 채택하지 않는다. Phase 08과 Phase 10은 QEMU
-에뮬레이션 장치로 수행한다. 실장치 검증은 이 PoC 이후의 후속 과제로 분리하며, 조사 결과는
-[하드웨어 후보 조사](phase-08/hardware-candidates.md)에 남긴다.
+D-9 확정으로 실물 하드웨어 후보 H-1~H-5는 채택하지 않는다. Phase 08은 QEMU 에뮬레이션
+장치로 수행하고 Phase 10은 D-11의 공개 fixture를 같은 E-3 pipeline에 연결한다. 실장치와 실제
+model inference 검증은 이 PoC 이후의 후속 과제로 분리하며, 조사 결과는
+[하드웨어 후보 조사](phase-08/hardware-candidates.md)와 [Phase 10 계획](phase-10/README.md)에
+남긴다.
 
 D-8의 application API, guest driver/EL2 경계와 전체 호출 순서는 [EL2 DMA-BUF channel
 설계](phase-09/el2-dmabuf-channel-design.md)에 정의한다. 서로 다른 pVM의 숫자 FD를 그대로
@@ -163,7 +172,7 @@ DMA-BUF FD로 import한다. FF-A virtual instance 구현은 후속 표준화 과
 | 08 | 장치 직접 할당과 DMA 격리 | E-3 | 완료 | [phase-08](phase-08/README.md) |
 | 09 | pVM 간 DMA-BUF export/import | E-1, E-3 | 완료 | [phase-09](phase-09/README.md) |
 | 09-b | Host/Camera/AI 사용자 공간 end-to-end 통신 | E-1, E-3 | 완료 | [phase-09-b](phase-09-b/README.md) |
-| 10 | AI 추론 파이프라인 통합 | E-3 | 미착수 | [phase-10](phase-10/README.md) |
+| 10 | 공개 fixture 기반 Reference Scenario 통합 | E-3 | 완료 | [phase-10](phase-10/README.md) |
 | 11 | 결과 종합 및 요구사항 매핑 | - | 진행 중 | [phase-11](phase-11/README.md) |
 
 Phase 05, 06, 07은 E-1과 E-2에서 병행할 수 있다. D-9 확정으로 Phase 08과 Phase 10도
@@ -173,7 +182,7 @@ Phase 05, 06, 07은 E-1과 E-2에서 병행할 수 있다. D-9 확정으로 Phas
 ### Phase 00. 범위와 환경 확정
 
 1. 검증 목표를 CPU 접근 격리, DMA 격리, 다중 pVM, OP-TEE 공존, 동적 수명주기, 장치 할당,
-   zero-copy 전달, AI 추론으로 분해한다.
+   zero-copy 전달, fixture 기반 객체 탐지 결과 반환으로 분해한다.
 2. E-1, E-2, E-3 환경을 구분한다.
 3. 생성물 경로와 문서화 규칙을 확정한다.
 
@@ -313,22 +322,28 @@ Host relay/copy 없이 전달되고, AI는 descriptor를 실제 DMA-BUF 크기/f
 Host에는 명령·ACK·상태·오류와 허용된 결과만 보여야 하며 종료 뒤 모든 통신/lease/VM 자원이
 회수되어야 한다. 상세 판정은 [Phase 09-b README](phase-09-b/README.md)에 있다.
 
-### Phase 10. AI 추론 파이프라인 통합
+### Phase 10. 공개 fixture 기반 Reference Scenario 통합
 
-1. AI pVM 안에서 추론 런타임을 기동한다. GPU 가속 없이 CPU 경로로 수행한다.
-2. Phase 09로 전달받은 프레임에 대해 추론을 수행한다.
-3. Phase 09-b의 deterministic result adapter를 CPU inference adapter로 교체하고 동일한
-   Host/Camera/AI protocol을 회귀 검증한다.
-4. Phase 09-b의 descriptor size, FOURCC, dimension과 plane bounds를 imported DMA-BUF 실제
-   크기와 대조하고 검증된 layout만 inference adapter에 전달한다.
-5. 모델 가중치와 중간 데이터가 AI pVM 밖으로 나가지 않음을 확인한다.
-6. Phase 09-b의 반환 경로를 재사용해 추론 결과만 Host Application으로 보내고 최종 result
-   allowlist를 검증한다.
-7. 캡처, 전달, 추론, 결과 반환을 반복 실행하고 종료 명령으로 정지한다.
-8. 파이프라인 종료 후 두 pVM의 장치와 메모리 자원을 회수한다.
+1. Open Model Zoo commit, `person-bicycle-car-detection.mp4`,
+   `person-vehicle-bike-detection-2000` FP32 model과 CPU object detection demo를 digest로 고정한다.
+2. 준비 Host에서 동영상을 decode해 균등 간격 30개의 단일-page 32×32 BGR24/zero-padding
+   fixture와 원본 frame의 class/confidence/bounding-box oracle을 생성하고 두 번의 생성 결과가
+   같은지 확인한다.
+3. Camera pVM의 marker generator를 canonical frame replay adapter로 교체하고 BGR3
+   size/stride/plane descriptor를 별도 EL2 message channel로 보낸다.
+4. AI pVM은 actual DMA-BUF size와 BGR3 bounds를 검증한 뒤 raw frame SHA-256으로만 oracle을
+   조회한다. 실제 model inference는 수행하지 않는다.
+5. Phase 09-b result protocol을 최대 16개의 고정 class/Q16 score/Q16 bounding box를 담는
+   bounded `DETECTION_RESULT`로 확장한다.
+6. Host 결과가 30개 frame의 normalized oracle과 정확히 일치하고 Host-facing protocol에 raw
+   frame/hash/descriptor/FD/token/address가 없는지 확인한다.
+7. 한 byte 변조, 잘못된 layout/hash, duplicate/replay/mismatch와 Camera/AI/Host 장애를 주입한다.
+8. STOP/EOS 뒤 두 pVM의 socket, DMA-BUF lease, message queue, VM/vCPU와 page를 회수하고
+   Phase 09-b 전체 회귀 시험을 수행한다.
 
-완료 조건: 반복 실행에서 추론 결과가 Host에 도달하고, 영상 원본과 모델 데이터에 대한 Host
-접근이 모두 차단되어야 한다. GPU 가속 성립 여부는 판정 대상이 아니다.
+완료 조건: [Phase 10 완료 조건](phase-10/README.md)의 CC-10-01~11이 모두 통과하고 30개 frame의
+detection 결과가 oracle과 일치하며 최종 `PVM_VISION_PIPELINE_OK`가 출력되어야 한다. 공개
+fixture의 내용 비밀성, 실물 camera/GPU, 실제 inference와 model/tensor 보호는 판정 대상이 아니다.
 
 ### Phase 11. 결과 종합
 
@@ -377,6 +392,9 @@ Host에는 명령·ACK·상태·오류와 허용된 결과만 보여야 하며 �
 | pKVM DMA 격리가 upstream 미머지 | 개발 브랜치 갱신 시 결과 재현 불가 | 사용한 커밋 SHA를 결과 문서에 고정 기록 |
 | 표준 pVM 간 FD-passing 부재 | 서로 다른 kernel의 숫자 FD를 직접 전달할 수 없음 | EL2 transfer object를 AI guest driver가 새 local DMA-BUF FD로 import하는 abstraction 구현 |
 | 에뮬레이션 장치의 pVM 내부 드라이버 동작 불확실 | Phase 10 지연 | Phase 08에서 장치 할당 직후 최소 드라이버 기동을 먼저 확인 |
+| 외부 demo/video 변경 또는 삭제 | Phase 10 fixture 재생성 불가 | Open Model Zoo commit, 원본 URL·크기·digest, model checksum과 tool version을 고정하고 digest가 맞는 로컬 cache만 허용 |
+| demo 동영상 재배포 조건 불명확 | fixture를 저장소에 포함할 수 없음 | 동영상과 decode frame을 Git에 넣지 않고 원본 URL에서 `work/build`로만 받아 로컬 검증에 사용하며 구현 전에 사용 조건을 다시 기록 |
+| oracle replay를 실제 AI inference로 오해 | Phase 10 보안·기능 주장 과장 | 실제 inference, 정확도, model/tensor 보호를 완료 조건에서 제외하고 결과 문서에 simulator임을 명시 |
 | E-1에 pvmfw 신뢰 체인 미구성 | 비신뢰 Host에 대한 이미지 신뢰 근거 부족 | Phase 07은 SHA-256 허용 목록으로 변조 거부만 검증. pvmfw/verified boot와 서명 키 연결은 후속 과제로 명시 |
 | OP-TEE 커널 통합 충돌 | Phase 06 지연 | E-2 베이스라인을 먼저 고정하고 pKVM을 단계적으로 적용 |
 | 재생성 불가능한 work 산출물 | 결과 추적 불가 | 커밋 SHA, 명령, 로그 마커를 Phase 문서에 기록 |

@@ -178,23 +178,57 @@ int pvm_user_message_init(struct pvm_user_message *message,
 
 int pvm_frame_desc_validate(const struct pvm_frame_desc *d)
 {
+	uint32_t bytes_per_pixel;
 	uint32_t i;
 	if (!d || d->version != PVM_FRAME_DESC_VERSION ||
 	    d->descriptor_len != sizeof(*d) || !d->session_id || !d->frame_seq ||
 	    !d->transfer_id || !d->total_size || !d->width || !d->height ||
 	    !d->num_planes || d->num_planes > PVM_FRAME_MAX_PLANES ||
-	    d->fourcc != PVM_FOURCC_GREY || d->width > 4096 || d->height > 4096 ||
+	    d->width > 4096 || d->height > 4096 ||
 	    (d->flags & ~PVM_FRAME_FLAG_EOS))
+		return -EINVAL;
+	if (d->fourcc == PVM_FOURCC_GREY)
+		bytes_per_pixel = 1;
+	else if (d->fourcc == PVM_FOURCC_BGR3)
+		bytes_per_pixel = 3;
+	else
 		return -EINVAL;
 	for (i = 0; i < d->num_planes; ++i) {
 		uint64_t end = d->planes[i].offset + d->planes[i].size;
 		uint64_t required = (uint64_t)d->planes[i].stride * d->height;
-		if (!d->planes[i].stride || required > d->planes[i].size ||
+		uint64_t row_size = (uint64_t)d->width * bytes_per_pixel;
+		if (!d->planes[i].stride || d->planes[i].stride < row_size ||
+		    required > d->planes[i].size ||
 		    !d->planes[i].size || end < d->planes[i].offset || end > d->total_size)
 			return -EINVAL;
 	}
 	for (; i < PVM_FRAME_MAX_PLANES; ++i)
 		if (d->planes[i].size || d->planes[i].offset || d->planes[i].stride)
+			return -EINVAL;
+	return 0;
+}
+
+int pvm_user_detection_result_validate(const struct pvm_user_detection_result *result)
+{
+	uint32_t i;
+
+	if (!result || !result->frame_seq ||
+	    result->detection_count > PVM_USER_MAX_DETECTIONS ||
+	    result->truncated > 1 || result->reserved)
+		return -EINVAL;
+	for (i = 0; i < result->detection_count; ++i) {
+		const struct pvm_user_detection *detection = &result->detections[i];
+		if (detection->class_id > 2 || detection->confidence_q16 > 65536 ||
+		    detection->xmin_q16 > detection->xmax_q16 ||
+		    detection->ymin_q16 > detection->ymax_q16 ||
+		    detection->xmax_q16 > 65536 || detection->ymax_q16 > 65536)
+			return -EINVAL;
+	}
+	for (; i < PVM_USER_MAX_DETECTIONS; ++i)
+		if (result->detections[i].class_id ||
+		    result->detections[i].confidence_q16 ||
+		    result->detections[i].xmin_q16 || result->detections[i].ymin_q16 ||
+		    result->detections[i].xmax_q16 || result->detections[i].ymax_q16)
 			return -EINVAL;
 	return 0;
 }
@@ -230,7 +264,7 @@ int pvm_user_receive(int fd, struct pvm_user_message *message,
 	    message->header.version != PVM_USER_PROTO_VERSION ||
 	    message->header.header_len != sizeof(message->header) ||
 	    message->header.message_type < PVM_USER_MSG_HELLO ||
-	    message->header.message_type > PVM_USER_MSG_PEER_ERROR)
+	    message->header.message_type > PVM_USER_MSG_EOS)
 		return -EPROTO;
 	return read_all(fd, message->payload, message->header.payload_len,
 			       timeout_ms);

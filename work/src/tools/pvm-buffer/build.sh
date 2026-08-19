@@ -7,6 +7,8 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 PROJECT_ROOT=$(cd -- "${SCRIPT_DIR}/../../../.." && pwd)
 OUTPUT_DIR="${PROJECT_ROOT}/work/build/pvm-buffer"
 USER_CHANNEL_DIR="${PROJECT_ROOT}/work/src/tools/pvm-user-channel"
+VISION_DIR="${PROJECT_ROOT}/work/src/tools/vision-pipeline"
+VISION_FIXTURE_DIR="${PROJECT_ROOT}/work/build/vision-pipeline/fixtures"
 KERNEL_SRC="${PROJECT_ROOT}/work/src/pkvm-linux"
 KDIR="${PROJECT_ROOT}/work/build/pkvm-full-clang"
 LKVM="${PROJECT_ROOT}/work/src/kvmtool/lkvm"
@@ -33,6 +35,10 @@ mkdir -p "${OUTPUT_DIR}"
 	-I "${USER_CHANNEL_DIR}" "${USER_CHANNEL_DIR}/pvm_user_channel.c" \
 	"${USER_CHANNEL_DIR}/pvm_message.c" "${USER_CHANNEL_DIR}/pvm_e2e.c" \
 	-o "${OUTPUT_DIR}/pvm_e2e"
+"${ARM_CC}" -static -O2 -g -Wall -Wextra -Werror -std=gnu11 \
+	-I "${USER_CHANNEL_DIR}" "${USER_CHANNEL_DIR}/pvm_user_channel.c" \
+	"${USER_CHANNEL_DIR}/pvm_message.c" "${USER_CHANNEL_DIR}/pvm_vision.c" \
+	"${VISION_DIR}/pvm_sha256.c" -o "${OUTPUT_DIR}/pvm_vision"
 
 make -C "${SCRIPT_DIR}/driver" ARCH=arm64 LLVM=1 CC=clang-18 LD=ld.lld-18 \
 	KDIR="${KDIR}" M="${SCRIPT_DIR}/driver" -C "${KDIR}" modules
@@ -56,18 +62,23 @@ fetch_busybox() {
 # Guest rootfs: pvm_dmabuf.ko + camera/ai binaries. A single image serves
 # both roles; /init picks camera or ai from the "pvmrole=" kernel param.
 rm -rf "${GUEST_ROOT}"
-mkdir -p "${GUEST_ROOT}"/{bin,proc,sys,dev,run}
+mkdir -p "${GUEST_ROOT}"/{bin,proc,sys,dev,run,opt/vision}
 fetch_busybox "${GUEST_ROOT}/bin/busybox"
 chmod 755 "${GUEST_ROOT}/bin/busybox"
 for applet in sh mount poweroff cat sleep insmod grep cut; do
 	ln -sf busybox "${GUEST_ROOT}/bin/${applet}"
 done
 cp "${OUTPUT_DIR}/camera" "${OUTPUT_DIR}/ai" "${OUTPUT_DIR}/pvm_vsock_smoke" \
-	"${OUTPUT_DIR}/pvm_e2e" "${GUEST_ROOT}/bin/"
+	"${OUTPUT_DIR}/pvm_e2e" "${OUTPUT_DIR}/pvm_vision" "${GUEST_ROOT}/bin/"
 chmod 755 "${GUEST_ROOT}/bin/camera" "${GUEST_ROOT}/bin/ai"
 chmod 755 "${GUEST_ROOT}/bin/pvm_vsock_smoke"
+chmod 755 "${GUEST_ROOT}/bin/pvm_vision"
 cp "${SCRIPT_DIR}/driver/pvm_dmabuf.ko" "${GUEST_ROOT}/pvm_dmabuf.ko"
 cp "${USER_CHANNEL_DIR}/driver/pvm_message.ko" "${GUEST_ROOT}/pvm_message.ko"
+if [ -f "${VISION_FIXTURE_DIR}/frames.bin" ] && [ -f "${VISION_FIXTURE_DIR}/oracle.bin" ]; then
+	cp "${VISION_FIXTURE_DIR}/frames.bin" "${GUEST_ROOT}/opt/vision/frames.bin"
+	cp "${VISION_FIXTURE_DIR}/oracle.bin" "${GUEST_ROOT}/opt/vision/oracle.bin"
+fi
 
 cat > "${GUEST_ROOT}/init" <<'GUEST_INIT'
 #!/bin/sh
@@ -114,6 +125,18 @@ faultcamera)
 faultai)
 	/bin/pvm_e2e fault-ai; rc=$?
 	;;
+visioncamera)
+	/bin/pvm_vision camera; rc=$?
+	;;
+visionai)
+	/bin/pvm_vision ai; rc=$?
+	;;
+visionfaultcamera)
+	/bin/pvm_vision fault-camera; rc=$?
+	;;
+visionfaultai)
+	/bin/pvm_vision fault-ai; rc=$?
+	;;
 smoke)
 	/bin/pvm_vsock_smoke guest
 	rc=$?
@@ -134,7 +157,7 @@ chmod 755 "${GUEST_ROOT}/init"
 # Host (outer QEMU-booted) rootfs: lkvm plus the same kernel Image reused as
 # the protected-guest kernel, and the guest rootfs built above.
 rm -rf "${HOST_ROOT}"
-mkdir -p "${HOST_ROOT}"/{bin,lib,proc,sys,dev,run,opt/pvm}
+mkdir -p "${HOST_ROOT}"/{bin,lib,proc,sys,dev,run,opt/pvm,opt/vision}
 fetch_busybox "${HOST_ROOT}/bin/busybox"
 chmod 755 "${HOST_ROOT}/bin/busybox"
 for applet in sh mount poweroff cat sleep grep kill; do
@@ -142,11 +165,16 @@ for applet in sh mount poweroff cat sleep grep kill; do
 done
 cp "${LKVM}" "${HOST_ROOT}/bin/lkvm"
 chmod 755 "${HOST_ROOT}/bin/lkvm"
-cp "${OUTPUT_DIR}/pvm_vsock_smoke" "${OUTPUT_DIR}/pvm_e2e" "${HOST_ROOT}/bin/"
+cp "${OUTPUT_DIR}/pvm_vsock_smoke" "${OUTPUT_DIR}/pvm_e2e" \
+	"${OUTPUT_DIR}/pvm_vision" "${HOST_ROOT}/bin/"
 chmod 755 "${HOST_ROOT}/bin/pvm_vsock_smoke"
+chmod 755 "${HOST_ROOT}/bin/pvm_vision"
 cp "${ARM_SYSROOT_LIB}/libc.so.6" "${ARM_SYSROOT_LIB}/ld-linux-aarch64.so.1" "${HOST_ROOT}/lib/"
 cp "${KDIR}/arch/arm64/boot/Image" "${HOST_ROOT}/opt/pvm/Image"
 cp "${OUTPUT_DIR}/rootfs-pvm-buffer-guest.cpio.gz" "${HOST_ROOT}/opt/pvm/rootfs.cpio.gz"
+if [ -f "${VISION_FIXTURE_DIR}/oracle.bin" ]; then
+	cp "${VISION_FIXTURE_DIR}/oracle.bin" "${HOST_ROOT}/opt/vision/oracle.bin"
+fi
 
 cat > "${HOST_ROOT}/init" <<'HOST_INIT'
 #!/bin/sh
@@ -158,6 +186,61 @@ mount -t devtmpfs devtmpfs /dev 2>/dev/null
 mkdir -p /tmp
 
 echo "PVM_BUFFER_HOST_BOOT_OK"
+
+vision=$(cat /proc/cmdline | grep -o 'pvmvision=[01]' | cut -d= -f2 || true)
+if [ "${vision}" = "1" ]; then
+	/bin/pvm_vision host >/tmp/vision-host.log 2>&1 & vision_host_pid=$!
+	sleep 1
+	/bin/lkvm run --name pvm-vision-ai --protected --vsock 4101 --cpus 1 --mem 256 \
+		--network mode=none --console serial --kernel /opt/pvm/Image \
+		--initrd /opt/pvm/rootfs.cpio.gz \
+		--params "earlycon rdinit=/init pvmrole=visionai pvmtransport=vsock" \
+		>/tmp/vision-ai.log 2>&1 & vision_ai_pid=$!
+	sleep 2
+	/bin/lkvm run --name pvm-vision-camera --protected --vsock 4102 --cpus 1 --mem 256 \
+		--network mode=none --console serial --kernel /opt/pvm/Image \
+		--initrd /opt/pvm/rootfs.cpio.gz \
+		--params "earlycon rdinit=/init pvmrole=visioncamera pvmtransport=vsock" \
+		>/tmp/vision-camera.log 2>&1 & vision_camera_pid=$!
+	wait "${vision_camera_pid}"; vision_camera_rc=$?
+	wait "${vision_ai_pid}"; vision_ai_rc=$?
+	wait "${vision_host_pid}"; vision_host_rc=$?
+	cat /tmp/vision-host.log /tmp/vision-ai.log /tmp/vision-camera.log
+	echo "PVM_VISION_RC: host=${vision_host_rc} ai=${vision_ai_rc} camera=${vision_camera_rc}"
+	grep '^Mlocked:' /proc/meminfo || true
+	if [ "${vision_host_rc}" = 0 ] && [ "${vision_ai_rc}" = 0 ] && [ "${vision_camera_rc}" = 0 ]; then
+		echo "PVM_VISION_PIPELINE_VALIDATION_OK"
+	fi
+	poweroff -f
+fi
+
+vision_fault=$(cat /proc/cmdline | grep -o 'pvmvisionfault=[01]' | cut -d= -f2 || true)
+if [ "${vision_fault}" = "1" ]; then
+	/bin/pvm_vision fault-host >/tmp/vision-fault-host.log 2>&1 & vision_fault_host_pid=$!
+	sleep 1
+	/bin/lkvm run --name pvm-vision-fault-ai --protected --vsock 4101 --cpus 1 --mem 256 \
+		--network mode=none --console serial --kernel /opt/pvm/Image \
+		--initrd /opt/pvm/rootfs.cpio.gz \
+		--params "earlycon rdinit=/init pvmrole=visionfaultai pvmtransport=vsock" \
+		>/tmp/vision-fault-ai.log 2>&1 & vision_fault_ai_pid=$!
+	sleep 2
+	/bin/lkvm run --name pvm-vision-fault-camera --protected --vsock 4102 --cpus 1 --mem 256 \
+		--network mode=none --console serial --kernel /opt/pvm/Image \
+		--initrd /opt/pvm/rootfs.cpio.gz \
+		--params "earlycon rdinit=/init pvmrole=visionfaultcamera pvmtransport=vsock" \
+		>/tmp/vision-fault-camera.log 2>&1 & vision_fault_camera_pid=$!
+	wait "${vision_fault_camera_pid}"; vision_fault_camera_rc=$?
+	wait "${vision_fault_ai_pid}"; vision_fault_ai_rc=$?
+	wait "${vision_fault_host_pid}"; vision_fault_host_rc=$?
+	cat /tmp/vision-fault-host.log /tmp/vision-fault-ai.log /tmp/vision-fault-camera.log
+	echo "PVM_VISION_FAULT_RC: host=${vision_fault_host_rc} ai=${vision_fault_ai_rc} camera=${vision_fault_camera_rc}"
+	grep '^Mlocked:' /proc/meminfo || true
+	if [ "${vision_fault_host_rc}" = 0 ] && [ "${vision_fault_ai_rc}" = 0 ] && \
+	   [ "${vision_fault_camera_rc}" = 0 ]; then
+		echo "PVM_VISION_FAULT_VALIDATION_OK"
+	fi
+	poweroff -f
+fi
 
 fault=$(cat /proc/cmdline | grep -o 'pvmfault=[01]' | cut -d= -f2 || true)
 if [ "${fault}" = "1" ]; then

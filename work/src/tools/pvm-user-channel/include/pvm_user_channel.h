@@ -34,6 +34,8 @@ enum pvm_user_message_type {
 	PVM_USER_MSG_FRAME_DONE = 14,
 	PVM_USER_MSG_PEER_STOP = 15,
 	PVM_USER_MSG_PEER_ERROR = 16,
+	PVM_USER_MSG_DETECTION_RESULT = 17,
+	PVM_USER_MSG_EOS = 18,
 };
 
 enum pvm_user_status {
@@ -89,6 +91,8 @@ struct pvm_user_session_state {
 #define PVM_FRAME_MAX_PLANES 4
 #define PVM_FRAME_FLAG_EOS UINT32_C(1)
 #define PVM_FOURCC_GREY UINT32_C(0x59455247)
+#define PVM_FOURCC_BGR3 UINT32_C(0x33524742)
+#define PVM_USER_MAX_DETECTIONS 16
 
 struct pvm_plane_desc {
 	uint64_t offset;
@@ -133,7 +137,26 @@ struct pvm_peer_message {
 	} body;
 };
 
+struct pvm_user_detection {
+	uint32_t class_id;
+	uint32_t confidence_q16;
+	uint32_t xmin_q16;
+	uint32_t ymin_q16;
+	uint32_t xmax_q16;
+	uint32_t ymax_q16;
+};
+
+struct pvm_user_detection_result {
+	uint64_t frame_seq;
+	uint32_t detection_count;
+	uint32_t truncated;
+	uint32_t status;
+	uint32_t reserved;
+	struct pvm_user_detection detections[PVM_USER_MAX_DETECTIONS];
+};
+
 int pvm_frame_desc_validate(const struct pvm_frame_desc *desc);
+int pvm_user_detection_result_validate(const struct pvm_user_detection_result *result);
 int pvm_user_validate_peer(uint32_t expected_role, uint32_t peer_cid,
 			   const struct pvm_user_hello *hello);
 int pvm_user_session_accept(struct pvm_user_session_state *state,

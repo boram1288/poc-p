@@ -7,5 +7,7 @@
 *.order
 .*.cmd
 vsock_smoke
+pvm_vision
 tests/protocol_test
+tests/sha256_test
 mmio_smoke

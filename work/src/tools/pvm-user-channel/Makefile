@@ -3,7 +3,7 @@
 CC ?= cc
 CFLAGS ?= -O2 -g -Wall -Wextra -Werror -std=gnu11
 
-all: libpvm_user_channel.a libpvm_message.a vsock_smoke
+all: libpvm_user_channel.a libpvm_message.a vsock_smoke pvm_vision
 
 pvm_user_channel.o: pvm_user_channel.c include/pvm_user_channel.h
 	$(CC) $(CFLAGS) -I. -c $< -o $@
@@ -20,11 +20,19 @@ libpvm_message.a: pvm_message.o
 vsock_smoke: vsock_smoke.c pvm_user_channel.o include/pvm_user_channel.h
 	$(CC) $(CFLAGS) -I. vsock_smoke.c pvm_user_channel.o -o $@
 
+pvm_vision: pvm_vision.c pvm_user_channel.c pvm_message.c \
+		../vision-pipeline/pvm_sha256.c ../vision-pipeline/include/pvm_vision_fixture.h
+	$(CC) $(CFLAGS) -I. pvm_vision.c pvm_user_channel.c pvm_message.c \
+		../vision-pipeline/pvm_sha256.c -o $@
+
 test: pvm_user_channel.o tests/protocol_test.c
 	$(CC) $(CFLAGS) -I. tests/protocol_test.c pvm_user_channel.o -o tests/protocol_test
 	./tests/protocol_test
+	$(CC) $(CFLAGS) -I. tests/sha256_test.c ../vision-pipeline/pvm_sha256.c -o tests/sha256_test
+	./tests/sha256_test
 
 clean:
-	rm -f pvm_user_channel.o pvm_message.o libpvm_user_channel.a libpvm_message.a vsock_smoke tests/protocol_test
+	rm -f pvm_user_channel.o pvm_message.o libpvm_user_channel.a libpvm_message.a \
+		vsock_smoke pvm_vision tests/protocol_test tests/sha256_test
 
 .PHONY: all test clean

@@ -23,7 +23,7 @@ PoC는 README의 최종 목표를 다음 순서로 분해해 검증한다.
 7. Host 요청 기반 pVM 동적 수명주기 관리
 8. 카메라 역할 장치와 추론 역할 장치의 직접 할당과 S2MPU 기반 DMA 격리
 9. Camera pVM에서 AI pVM으로의 zero-copy 프레임 전달
-10. AI pVM의 CPU 경로 추론과 결과만 반환
+10. 공개 동영상 frame replay와 AI pVM의 bounded detection oracle 반환
 
 1~4는 현재 환경에서 완료했다. 5~7은 E-1과 E-2에서, 8~10은 D-9 확정에 따라 S2MPU를
 에뮬레이션하는 E-3에서 수행한다. Phase 대응은 [전체 수행 계획](../PLAN.md)의 5절을 따른다.
@@ -34,7 +34,7 @@ PoC는 README의 최종 목표를 다음 순서로 분해해 검증한다.
 |---|---|---|---|
 | E-1 | x86_64 + QEMU TCG + pKVM | 빠른 기능 검증 | CPU 실행 및 메모리 매핑 경로 |
 | E-2 | QEMU v8 + TF-A + OP-TEE | Secure World 공존 | OP-TEE와 pKVM의 통합 동작 |
-| E-3 | QEMU (SMMUv3 stage-2 지원) + `virt,iommu=smmuv3` + pKVM + 에뮬레이션 장치 | 장치 할당, DMA 격리, 추론 파이프라인 | 장치 DMA 경로의 격리 로직 |
+| E-3 | QEMU (SMMUv3 stage-2 지원) + `virt,iommu=smmuv3` + pKVM + 에뮬레이션 장치 | 장치 할당, DMA 격리, fixture 기반 영상 분석 파이프라인 | 장치 DMA 경로와 runtime frame/result 경로의 격리 로직 |
 
 QEMU TCG 결과만으로 실제 arm64 하드웨어의 기밀성을 주장하지 않는다.
 
@@ -63,4 +63,5 @@ PoC 범위에서 제외했으므로 E-3는 에뮬레이션 환경이며 장치 D
 
 범위는 고정이 아니다. Phase 07의 이미지 검증 방식과 Phase 09의 전달 방식은 각각 D-6과
 D-8에서 확정된 뒤 이 문서에 반영한다. Phase 08의 실행 환경은 D-9에서 확정해 위 환경
-분리 표에 반영했다.
+분리 표에 반영했다. Phase 10의 camera/GPU 역할은 D-11에서 공개 동영상 frame과 사전 생성
+detection oracle replay로 확정했다. 실제 inference와 model/tensor 보호는 PoC 범위 밖이다.

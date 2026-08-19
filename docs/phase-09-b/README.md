@@ -28,8 +28,8 @@ fallback 없이 AF_VSOCK으로 고정한다. Camera↔AI metadata는 Host relay�
 | AI workload ↔ Host Application | versioned command/result API | `AF_VSOCK` (`virtio-vsock`/`vhost-vsock`) | 설정, stop 명령, 허용 목록의 추론 결과, ACK, 오류 |
 
 Phase 09-b에서는 실제 AI 추론 대신 frame marker를 확인해 만드는 deterministic result를 사용한다.
-Phase 10은 같은 API와 protocol을 유지한 채 deterministic 처리부만 CPU inference runtime으로
-교체한다.
+Phase 10은 같은 session/request/frame protocol과 transport를 유지하면서 Camera 처리부를 공개
+동영상 frame replay로, AI 처리부를 frame hash 기반 detection oracle lookup으로 교체한다.
 
 성공 시나리오는 다음과 같다.
 
@@ -297,7 +297,8 @@ Camera↔AI 경로를 Host relay로 바꾸는 fallback은 허용하지 않는다
 ### P09B-6. Phase 10 인계
 
 1. deterministic result 생성 함수를 inference adapter interface 뒤로 격리한다.
-2. Phase 10이 CPU inference를 연결할 입력 DMA-BUF view와 output result schema를 고정한다.
+2. Phase 10이 공개 BGR24 fixture와 bounded detection result를 연결할 입력 DMA-BUF view와
+   확장 가능한 output result schema를 고정한다.
 3. Phase 10에서 새 transport를 만들지 않고 Phase 09-b protocol을 회귀 시험하도록 한다.
 
 ## 5. 검증 계획
