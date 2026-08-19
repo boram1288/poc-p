@@ -88,6 +88,8 @@ export/import한다. AI pVM은 NVIDIA GPU로 추론을 수행하며, 민감한 �
   소스 모듈 변경과 검증 범위/한계
 - [Phase 09 EL2 DMA-BUF channel 설계](docs/phase-09/el2-dmabuf-channel-design.md): Host runtime
   relay 없는 FD-passing abstraction, C application API/예제와 전체 sequence
+- [Phase 09 검증 How-to](docs/phase-09/VERIFICATION.md): flat guest EL2 primitive 회귀부터
+  Linux guest 통합까지 처음 실행하는 개발자를 위한 명령 단위 재현 절차
 - [work 디렉터리 안내](work/README.md): 소스와 빌드 산출물 관리 규칙
 
 위 성공 조건 6개는 수행 계획의 목표 ID 및 Phase에 매핑되어 있다. 매핑표는

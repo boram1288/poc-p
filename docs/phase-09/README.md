@@ -7,6 +7,14 @@
 - 관련 목표: G-10
 - 관련 결정: D-8
 
+## 관련 문서
+
+| 문서 | 내용 | 읽는 순서 |
+|---|---|---|
+| [Phase 09 README](README.md) | 목표, 완료 조건, 실측 결과와 한계 | 전체 결과를 먼저 파악할 때 |
+| [검증 How-to](VERIFICATION.md) | 처음 실행하는 개발자가 flat guest primitive 회귀부터 Linux guest 통합까지 명령 단위로 직접 수행하고 결과 marker를 확인하는 방법 | 환경을 재현하고 실측할 때 |
+| [EL2 DMA-BUF channel 설계](el2-dmabuf-channel-design.md) | FD-passing abstraction, C application API/예제, EL2 sequence와 transfer state | 설계와 코드를 분석할 때 |
+
 ## 상태 checkpoint (2026-08-19)
 
 | 영역 | 현재 상태 |
