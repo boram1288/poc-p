@@ -27,10 +27,15 @@
 #define EDU_GPA 0x10000000ULL
 #define EDU_SIZE (1ULL << 20)
 #define DMA_GPA (WORKLOAD_GPA + 2 * MIN_PAGE_SIZE)
+#define LEASE_GPA (WORKLOAD_GPA + 3 * MIN_PAGE_SIZE)
 #define PCI_COMMAND_OFFSET 0x04
 #define PCI_COMMAND_IO_MEMORY_MASTER 0x0006
 #define MAGIC_STARTED 0x54524154534d5650ULL
 #define MAGIC_COMPLETED 0x21454e4f444d5650ULL
+#define MAGIC_AI_RW 0x4b4f5f57525f4941ULL
+#define MAGIC_CAMERA_READ 0x4f5f4145524d4143ULL
+#define MAGIC_OWNER_BLOCKED 0x4b4c425f524e574fULL
+#define MAGIC_TIMEOUT_REVOKE 0x2154554f454d4954ULL
 
 struct assigned_device {
 	int container_fd;
@@ -272,6 +277,32 @@ static int verify_host_mmio_blocked(const struct assigned_device *device,
 	return 0;
 }
 
+static int verify_host_memory_blocked(const void *address, const char *role)
+{
+	struct sigaction action = { .sa_handler = host_access_signal };
+	struct sigaction old_bus, old_segv;
+	volatile uint64_t value;
+	int jumped, caught;
+
+	sigemptyset(&action.sa_mask);
+	if (sigaction(SIGBUS, &action, &old_bus) ||
+	    sigaction(SIGSEGV, &action, &old_segv))
+		return -1;
+	host_access_signal_number = 0;
+	jumped = sigsetjmp(host_access_jmp, 1);
+	if (!jumped) {
+		value = *(const volatile uint64_t *)address;
+		(void)value;
+	}
+	caught = host_access_signal_number;
+	sigaction(SIGBUS, &old_bus, NULL);
+	sigaction(SIGSEGV, &old_segv, NULL);
+	if (caught != SIGBUS && caught != SIGSEGV)
+		return -1;
+	printf("PVM_BUFFER_HOST_ACCESS_BLOCKED: role=%s signal=%d\n", role, caught);
+	return 0;
+}
+
 static int locked_vm_bytes(void)
 {
 	char line[128];
@@ -329,14 +360,23 @@ static void set_boot_args(struct kvm_vcpu *vcpu, uint64_t jump_target)
 	args->sp_el1 = vcpu_get_reg(vcpu, ARM64_CORE_REG(sp_el1));
 }
 
-static int expect_mmio(struct kvm_vcpu *vcpu, uint64_t expected)
+static int read_mmio_marker(struct kvm_vcpu *vcpu, uint64_t *value)
 {
 	struct kvm_run *run = vcpu->run;
-	uint64_t value = 0;
+
 	if (run->exit_reason != KVM_EXIT_MMIO || run->mmio.phys_addr != MMIO_GPA ||
-	    !run->mmio.is_write || run->mmio.len != sizeof(value))
+	    !run->mmio.is_write || run->mmio.len != sizeof(*value))
 		return -1;
-	memcpy(&value, run->mmio.data, sizeof(value));
+	memcpy(value, run->mmio.data, sizeof(*value));
+	return 0;
+}
+
+static int expect_mmio(struct kvm_vcpu *vcpu, uint64_t expected)
+{
+	uint64_t value;
+
+	if (read_mmio_marker(vcpu, &value))
+		return -1;
 	if (value != expected)
 		printf("PVM_RUNNER_MMIO_MISMATCH: expected=0x%llx actual=0x%llx\n",
 		       (unsigned long long)expected, (unsigned long long)value);
@@ -386,6 +426,15 @@ int pvm_kvm_arm64_run(const char *role, const char *guest_image, int ready_fd)
 	void *workload = NULL;
 	size_t workload_size = 0;
 	int ret = 1;
+	bool phase09 = strstr(guest_image, "phase09-") != NULL;
+	bool phase09_owner_fault = strstr(guest_image,
+					 "phase09-owner-fault.img") != NULL;
+	bool phase09_receiver_teardown = strstr(guest_image,
+					      "phase09-receiver-teardown.img") != NULL;
+	bool phase09_timeout = strstr(guest_image,
+				    "phase09-timeout.img") != NULL;
+	uint64_t phase09_scenario = phase09_owner_fault ? 1 :
+		phase09_receiver_teardown ? 2 : phase09_timeout ? 3 : 0;
 	struct pvm_runner_ready ready = { .magic = PVM_RUNNER_READY_MAGIC };
 
 	assigned_device_init(&device);
@@ -405,13 +454,18 @@ int pvm_kvm_arm64_run(const char *role, const char *guest_image, int ready_fd)
 	memcpy(addr_gpa2hva(vm, WORKLOAD_GPA), workload, workload_size);
 	virt_map(vm, WORKLOAD_GPA, WORKLOAD_GPA, WORKLOAD_PAGES);
 	virt_map(vm, MMIO_GPA, MMIO_GPA, 1);
-	if (assign_edu_device(vm, &device, edu, role))
+	if (!phase09 && assign_edu_device(vm, &device, edu, role))
 		goto out;
 	vm_init_descriptor_tables(vm);
 	kvm_for_each_vcpu(vm, iter)
 		vcpu_init_descriptor_tables(iter);
-	vcpu_args_set(vcpu, 5, MMIO_GPA,
-		      EDU_GPA, (uint64_t)device.pviommu_fd, edu->vsid, DMA_GPA);
+	if (phase09 || phase09_owner_fault)
+		vcpu_args_set(vcpu, 5, MMIO_GPA, !strcmp(role, "ai"),
+			      !strcmp(role, "camera") ? 1 : 0, LEASE_GPA,
+			      phase09_scenario);
+	else
+		vcpu_args_set(vcpu, 5, MMIO_GPA, EDU_GPA,
+			      (uint64_t)device.pviommu_fd, edu->vsid, DMA_GPA);
 	set_boot_args(vcpu, WORKLOAD_GPA);
 
 	if (run_vcpu(vcpu, role))
@@ -422,6 +476,64 @@ int pvm_kvm_arm64_run(const char *role, const char *guest_image, int ready_fd)
 		goto out;
 	}
 	printf("GUEST_WORKLOAD_STARTED: role=%s\n", role);
+	if (phase09 || phase09_owner_fault) {
+		uint64_t evidence;
+
+		if (!strcmp(role, "camera")) {
+			printf("PVM_BUFFER_EXPORTED: role=%s receiver_endpoint=1 bytes=4096\n",
+			       role);
+			printf("PVM_BUFFER_WRONG_RECEIVER_BLOCKED: role=%s\n", role);
+			if (verify_host_memory_blocked(addr_gpa2hva(vm, LEASE_GPA), role)) {
+				printf("PVM_BUFFER_HOST_ACCESS_NOT_BLOCKED: role=%s\n", role);
+				goto out;
+			}
+		}
+		ready.resource_fd_count = count_kvm_fds();
+		ready.vcpu_count = 1;
+		ready.memory_bytes = WORKLOAD_PAGES * vm->page_size;
+		if (write(ready_fd, &ready, sizeof(ready)) != sizeof(ready))
+			goto out;
+		if (phase09_owner_fault && !strcmp(role, "camera")) {
+			if (run_vcpu(vcpu, role) || read_mmio_marker(vcpu, &evidence) ||
+			    evidence != MAGIC_OWNER_BLOCKED) {
+				printf("PVM_BUFFER_OWNER_ACCESS_NOT_BLOCKED: role=%s\n",
+				       role);
+				goto out;
+			}
+			printf("PVM_BUFFER_OWNER_ACCESS_BLOCKED: role=%s\n", role);
+			printf("PVM_BUFFER_OWNER_TEARDOWN_REVOKE: role=%s\n", role);
+			ret = 0;
+			goto out;
+		}
+
+		if (run_vcpu(vcpu, role) || read_mmio_marker(vcpu, &evidence))
+			goto out;
+		if (!strcmp(role, "ai") && evidence == MAGIC_AI_RW) {
+			printf("PVM_BUFFER_EVENT_RECEIVED: role=%s transport=el2-virq\n", role);
+			printf("PVM_BUFFER_IMPORTED: role=%s local_ipa=0x%llx bytes=4096\n",
+			       role, (unsigned long long)LEASE_GPA);
+			printf("PVM_BUFFER_AI_READ_WRITE_OK: role=%s bytes=8\n", role);
+		} else if (!strcmp(role, "camera") && phase09_timeout &&
+			   evidence == MAGIC_TIMEOUT_REVOKE) {
+			printf("PVM_BUFFER_TIMEOUT_DETECTED: role=%s\n", role);
+			printf("PVM_BUFFER_TIMEOUT_REVOKE_OK: role=%s\n", role);
+		} else if (!strcmp(role, "camera") && evidence == MAGIC_CAMERA_READ) {
+			printf("PVM_BUFFER_OWNERSHIP_RETURNED: role=%s\n", role);
+			printf("PVM_BUFFER_CAMERA_READ_OK: role=%s bytes=8\n", role);
+		} else {
+			printf("PVM_BUFFER_EVIDENCE_INVALID: role=%s value=0x%llx\n",
+			       role, (unsigned long long)evidence);
+			goto out;
+		}
+		if (run_vcpu(vcpu, role) || expect_mmio(vcpu, MAGIC_COMPLETED))
+			goto out;
+		if (!strcmp(role, "ai"))
+			printf("PVM_BUFFER_STALE_HANDLE_BLOCKED: role=%s\n", role);
+		printf("GUEST_WORKLOAD_COMPLETED: role=%s\n", role);
+		printf("PVM_BUFFER_EL2_DIRECT_OK: role=%s\n", role);
+		ret = 0;
+		goto out;
+	}
 	printf("PVM_DEVICE_DRIVER_OK: role=%s\n", role);
 	printf("PVM_DEVICE_NONOWNER_BLOCKED: role=%s\n", role);
 	printf("PVM_DEVICE_DMA_NORMAL_OK: role=%s\n", role);

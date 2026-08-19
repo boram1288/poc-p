@@ -24,13 +24,18 @@ fi
 cp "${BUSYBOX}" "${ROOT_DIR}/bin/busybox"
 cp "${OUTPUT_DIR}/arm64/pvmd" "${OUTPUT_DIR}/arm64/pvm-runner" \
 	"${OUTPUT_DIR}/arm64/pvmctl" "${OUTPUT_DIR}/arm64/phase07-app" \
+	"${OUTPUT_DIR}/arm64/phase09-app" \
 	"${OUTPUT_DIR}/arm64/protocol-negative" "${ROOT_DIR}/bin/"
 cp "${OUTPUT_DIR}/images/phase07-guest.img" \
 	"${OUTPUT_DIR}/images/phase07-guest-tampered.img" \
+	"${OUTPUT_DIR}/images/phase09-guest.img" \
+	"${OUTPUT_DIR}/images/phase09-owner-fault.img" \
+	"${OUTPUT_DIR}/images/phase09-receiver-teardown.img" \
+	"${OUTPUT_DIR}/images/phase09-timeout.img" \
 	"${OUTPUT_DIR}/images/SHA256SUMS" \
 	"${OUTPUT_DIR}/images/workload-verification.log" "${ROOT_DIR}/images/"
 chmod 755 "${ROOT_DIR}/bin/"*
-for applet in sh mount poweroff cat sleep kill grep; do
+for applet in sh mount poweroff cat sleep kill grep rm; do
 	ln -sf busybox "${ROOT_DIR}/bin/${applet}"
 done
 
@@ -65,6 +70,21 @@ echo "PVM_FRAMEWORK_PROTOCOL_TEST_RC=${protocol_rc}"
 /bin/phase07-app "${daemon_pid}"
 rc=$?
 echo "PVM_FRAMEWORK_TEST_RC=${rc}"
+if /bin/grep -qw pvm.phase09=1 /proc/cmdline; then
+	/bin/rm -f /run/pvm-framework/pvmd.sock
+	/bin/pvmd &
+	phase09_daemon_pid=$!
+	attempt=0
+	while [ ! -S /run/pvm-framework/pvmd.sock ] && [ "${attempt}" -lt 200 ]; do
+		/bin/sleep 0.01
+		attempt=$((attempt + 1))
+	done
+	/bin/phase09-app
+	phase09_rc=$?
+	echo "PVM_BUFFER_TEST_RC=${phase09_rc}"
+	/bin/kill "${phase09_daemon_pid}" 2>/dev/null || true
+	wait "${phase09_daemon_pid}" 2>/dev/null || true
+fi
 /bin/kill "${daemon_pid}" 2>/dev/null || true
 wait "${daemon_pid}" 2>/dev/null || true
 /bin/grep '^Mlocked:' /proc/meminfo || true

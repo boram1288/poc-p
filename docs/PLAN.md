@@ -36,7 +36,7 @@ Host로부터 카메라 영상과 AI 모델/추론 데이터를 격리한 상태
 | G-7 | 동적 pVM 수명주기 | Host 요청의 권한/정책 확인과 이미지 검증을 거쳐 pVM 생성, 모니터링, 장애 격리, 종료, 자원 회수 | 07 | 완료 |
 | G-8 | 장치 직접 할당 | 카메라 역할 장치와 추론 역할 장치를 각 pVM에 배타적으로 할당하고 회수 | 08 | 완료 |
 | G-9 | DMA 격리 | S2MPU가 있는 환경에서 장치 DMA 접근 차단 확인 | 08 | 완료 |
-| G-10 | cross-pVM DMA-BUF | Camera DMA-BUF를 Host runtime relay 없이 AI pVM이 새 local FD로 import하여 read/write | 09 | 미착수 |
+| G-10 | cross-pVM DMA-BUF | Camera DMA-BUF를 Host runtime relay 없이 AI pVM이 새 local FD로 import하여 read/write | 09 | 완료 |
 | G-11 | AI 추론 결과 반환 | AI pVM이 CPU 경로로 추론을 완료하고 허용된 결과만 Host Application에 반환 | 10 | 미착수 |
 
 G-8과 G-11의 완료 조건은 D-9 확정에 따라 QEMU 에뮬레이션 장치 기준으로 판정한다. 실물
@@ -154,7 +154,7 @@ DMA-BUF FD로 import한다. FF-A virtual instance 구현은 후속 표준화 과
 | 06 | OP-TEE와 pKVM 공존 | E-2 | 완료 | [phase-06](phase-06/README.md) |
 | 07 | 동적 pVM 수명주기 관리 | E-1 | 완료 | [phase-07](phase-07/README.md) |
 | 08 | 장치 직접 할당과 DMA 격리 | E-3 | 완료 | [phase-08](phase-08/README.md) |
-| 09 | pVM 간 DMA-BUF export/import | E-1, E-3 | 미착수 | [phase-09](phase-09/README.md) |
+| 09 | pVM 간 DMA-BUF export/import | E-1, E-3 | 완료 | [phase-09](phase-09/README.md) |
 | 10 | AI 추론 파이프라인 통합 | E-3 | 미착수 | [phase-10](phase-10/README.md) |
 | 11 | 결과 종합 및 요구사항 매핑 | - | 진행 중 | [phase-11](phase-11/README.md) |
 

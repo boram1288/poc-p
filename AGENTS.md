@@ -46,3 +46,10 @@ rtk pip list            rtk pnpm install        rtk npm run <script>
 - 각 Phase의 완료 조건을 구현과 실측 검증으로 충족한 뒤 관련 소스와 문서를 Git에 커밋한다.
 - Phase 완료 커밋은 현재 브랜치의 설정된 원격 upstream으로 push한다.
 - 검증이 실패했거나 Phase가 아직 완료 상태가 아니면 완료 커밋이나 push를 하지 않는다.
+
+## Trusted Access scope rule
+
+- 구현 또는 검증 중 Trusted Access 권한이 필요하다는 메시지가 나타나면, 해당 권한을 요구하거나
+  우회하지 않는다.
+- 목적을 공개된 Host/guest interface와 관찰 가능한 반환값만으로 검증 가능한 범위로 명확히
+  축소하고, 축소된 목표와 제외 항목을 Phase 문서에 기록한 뒤 진행한다.

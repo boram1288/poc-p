@@ -48,6 +48,11 @@ Phase 09에서는 Phase 08의 EL2 shared-buffer manager를 확장한 전용 HVC�
 사용한다. FF-A 호환 transport로의 교체는 후속 과제로 둔다. Secure Partition 또는 TA를
 broker로 두지 않는다.
 
+이 선택은 Trusted Access 권한 없이 검증할 수 있는 범위를 의도적으로 고정한다. endpoint
+identity, lease token, mapping state와 event는 pKVM EL2가 관리하고, 성공/거부 여부는 guest의
+HVC 반환값과 공개 console marker로만 판정한다. OP-TEE/TA/FF-A activation은 Phase 09의
+dependency나 완료 조건이 아니다.
+
 ## 3. 신뢰 경계와 구성 모듈
 
 | 모듈 | 실행 위치 | 역할 |
@@ -384,6 +389,43 @@ ALLOCATED
 
 성능, 동시 multi-producer, implicit fencing 및 production-grade DMA-BUF synchronization은 이
 PoC의 완료 조건에 포함하지 않는다.
+
+### 9.1 EL2 primitive 실측 checkpoint
+
+2026-08-19 QEMU E-1 실행에서 단계 2와 한 페이지 ownership lease primitive를 실측했다.
+Camera export가 만든 event를 AI의 `EVENT_POLL` HVC가 consume할 때 EL2가 Host exit 없이
+guest EL1 IRQ vector를 주입했다. nVHE fast HVC loop에서는 saved context만 갱신해서는 IRQ가
+반영되지 않으므로, guest `ELR_EL1/SPSR_EL1`은 EL12 accessor로, 재진입
+`ELR_EL2/SPSR_EL2`는 live context로 함께 갱신한다.
+
+정상 read/write/return, lease 중 owner data abort, wrong receiver, stale token, owner와 receiver
+teardown, timeout revoke가 모두 통과했다. 근거 로그는
+`work/build/pvm-framework/console-phase09-twenty-fourth.log`다. 이 checkpoint는 flat guest의
+4 KiB page를 사용하므로 Linux DMA-BUF object와 서로 다른 local FD를 증명하지 않는다.
+다음 구현 단위는 Linux guest의 `pvm-dmabuf` exporter/importer와 userspace FD test다.
+
+## 9.2 Linux guest 통합 완료 (2026-08-19)
+
+`work/src/tools/pvm-buffer/` 아래 Linux guest용 UAPI, DMA-BUF export/import driver, Camera
+workload, AI workload를 `aarch64-linux-gnu-gcc-9`로 정적 ARM64 바이너리까지 빌드했다.
+`pvm_dmabuf.ko`는 `pkvm-full-clang` 커널 설정을 기준으로 module 빌드를 통과했다.
+
+`work/src/tools/pvm-buffer/run.sh`가 `pkvm-full-clang` Image를 Host 커널과 protected guest
+커널로 함께 재사용해 `lkvm --protected`로 AI pVM(먼저 생성되어 endpoint 1)과 Camera
+pVM(나중에 생성되어 endpoint 2)을 독립된 Linux kernel로 각각 기동한다. Camera가 4 KiB
+DMA-BUF를 alloc/export하고, AI가 새로운 local FD로 import해 marker를 read/write한 뒤
+반환하면 Camera가 원래 FD에서 AI의 결과를 읽는 전체 sequence(본 문서 7절)를 실제 Linux
+guest 두 개로 재현해 통과했다. 실행 로그는
+`work/build/pvm-buffer/console-pvm-buffer-linux.log`이며 상세 마커는
+[phase-09 README](README.md#linux-guest-통합-실측-결과-2026-08-19)에 있다.
+
+이 통합 과정에서 `pvm_cpu_lease_export()`가 실제 Linux guest RAM의 PMD(2 MiB) stage-2 block을
+4 KiB 단위로 검증하다 매번 거부하던 결함을 발견해, 기존 Host 전용 stage-2 split
+primitive(`__pkvm_host_split_guest`)를 재사용하는 방식으로 수정했다. flat guest만으로는
+드러나지 않던 결함이었다.
+
+이 단계에서도 FF-A activation, OP-TEE/TA 호출, Secure Partition broker,
+`--protected-ffa`는 사용하지 않았다.
 
 ## 10. 근거 자료
 

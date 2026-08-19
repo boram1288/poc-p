@@ -39,6 +39,8 @@ aarch64-linux-gnu-ar rcs "${ARM_OUT}/libpvm.a" "${ARM_OUT}/pvm_client.o"
 	"${ARM_OUT}/libpvm.a" -Wl,-Map="${ARM_OUT}/pvmctl.map" -o "${ARM_OUT}/pvmctl"
 "${ARM_CC}" "${ARM_COMMON[@]}" "${SCRIPT_DIR}/tests/phase07_app.c" \
 	"${ARM_OUT}/libpvm.a" -Wl,-Map="${ARM_OUT}/phase07-app.map" -o "${ARM_OUT}/phase07-app"
+"${ARM_CC}" "${ARM_COMMON[@]}" "${SCRIPT_DIR}/tests/phase09_app.c" \
+	"${ARM_OUT}/libpvm.a" -Wl,-Map="${ARM_OUT}/phase09-app.map" -o "${ARM_OUT}/phase09-app"
 "${ARM_CC}" "${ARM_COMMON[@]}" "${SCRIPT_DIR}/tests/protocol_negative.c" \
 	-Wl,-Map="${ARM_OUT}/protocol-negative.map" -o "${ARM_OUT}/protocol-negative"
 
@@ -49,9 +51,29 @@ aarch64-linux-gnu-ar rcs "${ARM_OUT}/libpvm.a" "${ARM_OUT}/pvm_client.o"
 "${ARM_OBJCOPY}" -O binary -j .text "${IMAGE_OUT}/phase07-guest-workload.elf" \
 	"${IMAGE_OUT}/phase07-guest-workload.bin"
 
+"${ARM_CC}" -nostdlib -fno-pie -c "${SCRIPT_DIR}/guest/phase09_guest.S" \
+	-o "${IMAGE_OUT}/phase09-guest-workload.o"
+"${ARM_CC}" -nostdlib -static -no-pie -Wl,--build-id=none -Wl,-Ttext=0x40000000 \
+	"${IMAGE_OUT}/phase09-guest-workload.o" -o "${IMAGE_OUT}/phase09-guest-workload.elf"
+"${ARM_OBJCOPY}" -O binary -j .text "${IMAGE_OUT}/phase09-guest-workload.elf" \
+	"${IMAGE_OUT}/phase09-guest-workload.bin"
+
 workload_sha=$(sha256sum "${IMAGE_OUT}/phase07-guest-workload.bin" | awk '{print $1}')
 "${HOST_OUT}/pvm-image-pack" "${IMAGE_OUT}/phase07-guest-workload.bin" "${workload_sha}" \
 	"${IMAGE_OUT}/phase07-guest.img" > "${IMAGE_OUT}/workload-verification.log"
+phase09_workload_sha=$(sha256sum "${IMAGE_OUT}/phase09-guest-workload.bin" | awk '{print $1}')
+"${HOST_OUT}/pvm-image-pack" "${IMAGE_OUT}/phase09-guest-workload.bin" \
+	"${phase09_workload_sha}" "${IMAGE_OUT}/phase09-guest.img" \
+	>> "${IMAGE_OUT}/workload-verification.log"
+"${HOST_OUT}/pvm-image-pack" "${IMAGE_OUT}/phase09-guest-workload.bin" \
+	"${phase09_workload_sha}" "${IMAGE_OUT}/phase09-owner-fault.img" \
+	>> "${IMAGE_OUT}/workload-verification.log"
+"${HOST_OUT}/pvm-image-pack" "${IMAGE_OUT}/phase09-guest-workload.bin" \
+	"${phase09_workload_sha}" "${IMAGE_OUT}/phase09-receiver-teardown.img" \
+	>> "${IMAGE_OUT}/workload-verification.log"
+"${HOST_OUT}/pvm-image-pack" "${IMAGE_OUT}/phase09-guest-workload.bin" \
+	"${phase09_workload_sha}" "${IMAGE_OUT}/phase09-timeout.img" \
+	>> "${IMAGE_OUT}/workload-verification.log"
 cp "${IMAGE_OUT}/phase07-guest-workload.bin" "${IMAGE_OUT}/phase07-guest-workload-tampered.bin"
 printf 'tampered\n' >> "${IMAGE_OUT}/phase07-guest-workload-tampered.bin"
 if "${HOST_OUT}/pvm-image-pack" "${IMAGE_OUT}/phase07-guest-workload-tampered.bin" \
@@ -61,9 +83,21 @@ if "${HOST_OUT}/pvm-image-pack" "${IMAGE_OUT}/phase07-guest-workload-tampered.bi
 fi
 rm -f "${IMAGE_OUT}/rejected.img"
 image_sha=$(sha256sum "${IMAGE_OUT}/phase07-guest.img" | awk '{print $1}')
+phase09_image_sha=$(sha256sum "${IMAGE_OUT}/phase09-guest.img" | awk '{print $1}')
+phase09_owner_fault_sha=$(sha256sum "${IMAGE_OUT}/phase09-owner-fault.img" |
+	awk '{print $1}')
+phase09_receiver_teardown_sha=$(sha256sum \
+	"${IMAGE_OUT}/phase09-receiver-teardown.img" | awk '{print $1}')
+phase09_timeout_sha=$(sha256sum "${IMAGE_OUT}/phase09-timeout.img" |
+	awk '{print $1}')
 {
 	printf '%s  %s\n' "${workload_sha}" phase07-guest-workload.bin
 	printf '%s  %s\n' "${image_sha}" phase07-guest.img
+	printf '%s  %s\n' "${phase09_workload_sha}" phase09-guest-workload.bin
+	printf '%s  %s\n' "${phase09_image_sha}" phase09-guest.img
+	printf '%s  %s\n' "${phase09_owner_fault_sha}" phase09-owner-fault.img
+	printf '%s  %s\n' "${phase09_receiver_teardown_sha}" phase09-receiver-teardown.img
+	printf '%s  %s\n' "${phase09_timeout_sha}" phase09-timeout.img
 } > "${IMAGE_OUT}/SHA256SUMS"
 cp "${IMAGE_OUT}/phase07-guest.img" "${IMAGE_OUT}/phase07-guest-tampered.img"
 printf 'tampered\n' >> "${IMAGE_OUT}/phase07-guest-tampered.img"

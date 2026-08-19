@@ -17,6 +17,7 @@ HYP_IOMMU_PAGES=${HYP_IOMMU_PAGES:-}
 QEMU_EXTRA_ARGS=${QEMU_EXTRA_ARGS:-}
 CMDLINE_EXTRA=${CMDLINE_EXTRA:-}
 PHASE08=${PHASE08:-0}
+PHASE09=${PHASE09:-0}
 read -r -a QEMU_EXTRA_ARGV <<< "${QEMU_EXTRA_ARGS}"
 
 CMDLINE="console=ttyAMA0 kvm-arm.mode=protected earlycon rdinit=/init"
@@ -25,6 +26,9 @@ if [ -n "${HYP_IOMMU_PAGES}" ]; then
 fi
 if [ -n "${CMDLINE_EXTRA}" ]; then
 	CMDLINE="${CMDLINE} ${CMDLINE_EXTRA}"
+fi
+if [ "${PHASE09}" = 1 ]; then
+	CMDLINE="${CMDLINE} pvm.phase09=1"
 fi
 
 mkdir -p "${OUTPUT_DIR}"
@@ -35,7 +39,8 @@ timeout --signal=KILL "${TIMEOUT}" "${QEMU}" \
 rc=$?
 
 echo "QEMU_RC=${rc}"
-grep -E "Protected nVHE|PVM_FRAMEWORK_|GUEST_WORKLOAD_|Mlocked:|Kernel panic" "${LOG}" || true
+grep -E "Protected nVHE|PVM_FRAMEWORK_|PVM_BUFFER_|GUEST_WORKLOAD_|Mlocked:|Kernel panic" \
+	"${LOG}" || true
 
 required=(
 	PVM_FRAMEWORK_WORKLOAD_VERIFIED PVM_FRAMEWORK_WORKLOAD_REJECTED
@@ -50,6 +55,28 @@ required=(
 if [ "${rc}" -ne 0 ] || grep -q "Kernel panic" "${LOG}"; then
 	echo "PVM_FRAMEWORK_RUN_FAILED"
 	exit 1
+fi
+if [ "${PHASE09}" = 1 ]; then
+	phase09_required=(
+		PVM_BUFFER_EXPORTED PVM_BUFFER_WRONG_RECEIVER_BLOCKED
+		PVM_BUFFER_HOST_ACCESS_BLOCKED
+		PVM_BUFFER_EVENT_RECEIVED PVM_BUFFER_IMPORTED
+		PVM_BUFFER_AI_READ_WRITE_OK PVM_BUFFER_OWNERSHIP_RETURNED
+		PVM_BUFFER_CAMERA_READ_OK PVM_BUFFER_STALE_HANDLE_BLOCKED
+		PVM_BUFFER_OWNER_ACCESS_BLOCKED PVM_BUFFER_OWNER_TEARDOWN_REVOKE
+		PVM_BUFFER_OWNER_FAULT_RECOVERY_OK
+		PVM_BUFFER_RECEIVER_TEARDOWN_RECOVERY_OK
+		PVM_BUFFER_TIMEOUT_DETECTED PVM_BUFFER_TIMEOUT_REVOKE_OK
+		PVM_BUFFER_TIMEOUT_RECOVERY_OK
+		PVM_BUFFER_GUEST_TO_GUEST_OK PVM_BUFFER_RESOURCE_RECOVERY_OK
+		PVM_BUFFER_TEST_RC=0
+	)
+	for marker in "${phase09_required[@]}"; do
+		if ! grep -q "${marker}" "${LOG}"; then
+			echo "PVM_FRAMEWORK_RUN_FAILED: phase09-missing=${marker}"
+			exit 1
+		fi
+	done
 fi
 for marker in "${required[@]}"; do
 	if ! grep -q "${marker}" "${LOG}"; then
