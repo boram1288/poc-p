@@ -64,12 +64,14 @@ while [ ! -S /run/pvm-framework/pvmd.sock ] && [ "${attempt}" -lt 200 ]; do
 	/bin/sleep 0.01
 	attempt=$((attempt + 1))
 done
-/bin/protocol-negative
-protocol_rc=$?
-echo "PVM_FRAMEWORK_PROTOCOL_TEST_RC=${protocol_rc}"
-/bin/phase07-app "${daemon_pid}"
-rc=$?
-echo "PVM_FRAMEWORK_TEST_RC=${rc}"
+if ! /bin/grep -qw pvm.phase09_only=1 /proc/cmdline; then
+	/bin/protocol-negative
+	protocol_rc=$?
+	echo "PVM_FRAMEWORK_PROTOCOL_TEST_RC=${protocol_rc}"
+	/bin/phase07-app "${daemon_pid}"
+	rc=$?
+	echo "PVM_FRAMEWORK_TEST_RC=${rc}"
+fi
 if /bin/grep -qw pvm.phase09=1 /proc/cmdline; then
 	/bin/rm -f /run/pvm-framework/pvmd.sock
 	/bin/pvmd &

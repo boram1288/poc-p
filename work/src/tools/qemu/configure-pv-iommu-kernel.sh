@@ -24,7 +24,12 @@ fi
     --enable PKVM_PVIOMMU \
     --enable VFIO_PLATFORM \
     --enable PKVM_QEMU_EDU \
-    --enable PKVM_PVM_DMA_SHARE
+    --enable PKVM_PVM_DMA_SHARE \
+    --enable VIRT_DRIVERS \
+    --enable ARM_PKVM_GUEST \
+    --enable VSOCKETS \
+    --enable VIRTIO_VSOCKETS \
+    --enable VHOST_VSOCK
 
 # Resolve dependencies using the arm64 Kconfig graph.
 make -C "${KERNEL_SRC}" O="${KERNEL_OUT}" ARCH=arm64 LLVM=1 \
@@ -38,5 +43,10 @@ grep -qx 'CONFIG_PKVM_PVIOMMU=y' "${KERNEL_OUT}/.config"
 grep -qx 'CONFIG_VFIO_PLATFORM=y' "${KERNEL_OUT}/.config"
 grep -qx 'CONFIG_PKVM_QEMU_EDU=y' "${KERNEL_OUT}/.config"
 grep -qx 'CONFIG_PKVM_PVM_DMA_SHARE=y' "${KERNEL_OUT}/.config"
+grep -qx 'CONFIG_VIRT_DRIVERS=y' "${KERNEL_OUT}/.config"
+grep -qx 'CONFIG_ARM_PKVM_GUEST=y' "${KERNEL_OUT}/.config"
+grep -qx 'CONFIG_VSOCKETS=y' "${KERNEL_OUT}/.config"
+grep -qx 'CONFIG_VIRTIO_VSOCKETS=y' "${KERNEL_OUT}/.config"
+grep -qx 'CONFIG_VHOST_VSOCK=y' "${KERNEL_OUT}/.config"
 
 echo "pKVM PV IOMMU kernel configuration is valid: ${KERNEL_OUT}"

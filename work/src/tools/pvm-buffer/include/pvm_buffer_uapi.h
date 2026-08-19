@@ -22,6 +22,7 @@ struct pvm_buffer_receive {
 	__s32 fd;
 	__u32 timeout_ms;
 	__u64 token;
+	__u64 actual_size;
 };
 
 struct pvm_buffer_token {

@@ -213,6 +213,7 @@ static long pvm_ioctl_receive(void __user *argp)
 	}
 	active_import = backing;
 	request.fd = fd;
+	request.actual_size = res.a1;
 	if (copy_to_user(argp, &request, sizeof(request)))
 		return -EFAULT;
 	return 0;

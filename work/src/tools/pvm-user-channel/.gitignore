@@ -1,0 +1,11 @@
+*.a
+*.o
+*.ko
+*.mod
+*.mod.c
+*.symvers
+*.order
+.*.cmd
+vsock_smoke
+tests/protocol_test
+mmio_smoke

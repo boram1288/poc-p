@@ -18,6 +18,7 @@ QEMU_EXTRA_ARGS=${QEMU_EXTRA_ARGS:-}
 CMDLINE_EXTRA=${CMDLINE_EXTRA:-}
 PHASE08=${PHASE08:-0}
 PHASE09=${PHASE09:-0}
+PHASE09_ONLY=${PHASE09_ONLY:-0}
 read -r -a QEMU_EXTRA_ARGV <<< "${QEMU_EXTRA_ARGS}"
 
 CMDLINE="console=ttyAMA0 kvm-arm.mode=protected earlycon rdinit=/init"
@@ -29,6 +30,9 @@ if [ -n "${CMDLINE_EXTRA}" ]; then
 fi
 if [ "${PHASE09}" = 1 ]; then
 	CMDLINE="${CMDLINE} pvm.phase09=1"
+fi
+if [ "${PHASE09_ONLY}" = 1 ]; then
+	CMDLINE="${CMDLINE} pvm.phase09_only=1"
 fi
 
 mkdir -p "${OUTPUT_DIR}"
@@ -78,12 +82,14 @@ if [ "${PHASE09}" = 1 ]; then
 		fi
 	done
 fi
-for marker in "${required[@]}"; do
-	if ! grep -q "${marker}" "${LOG}"; then
-		echo "PVM_FRAMEWORK_RUN_FAILED: missing=${marker}"
-		exit 1
-	fi
-done
+if [ "${PHASE09_ONLY}" != 1 ]; then
+	for marker in "${required[@]}"; do
+		if ! grep -q "${marker}" "${LOG}"; then
+			echo "PVM_FRAMEWORK_RUN_FAILED: missing=${marker}"
+			exit 1
+		fi
+	done
+fi
 if [ "${PHASE08}" = 1 ]; then
 	phase08_required=(
 		PVM_DEVICE_DRIVER_OK PVM_DEVICE_NONOWNER_BLOCKED

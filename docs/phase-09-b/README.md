@@ -1,13 +1,21 @@
 # Phase 09-b: 사용자 공간 end-to-end 통신
 
-- 상태: 미착수
+- 상태: 완료
 - 목적: Host Application, Camera pVM workload, AI pVM workload 사이의 세 통신 구간을 하나의
   사용자 공간 세션으로 연결하고, 허용된 control/result만 Host에 노출한다.
 - 환경: E-1에서 통신 기능 검증, E-3에서 Phase 10 파이프라인과 통합
 - 관련 목표: G-10, G-10B, G-11
 - 관련 결정: D-8, D-9, D-10
+- 실측 결과: [VERIFICATION.md](VERIFICATION.md)
 
 ## 1. 범위와 성공 시나리오
+
+착수 결과: `pvm-user-channel`에 versioned framing, Host↔protected guest AF_VSOCK smoke,
+그리고 Camera↔AI `FRAME_DESC` 고정 descriptor/검증 루틴을 추가했다. protected guest의
+virtio ring 공유에 필요한 `CONFIG_VIRT_DRIVERS`, `CONFIG_ARM_PKVM_GUEST`와 VSOCK 설정을
+활성화한 뒤 `HELLO/READY/CAPTURE/ACK` 왕복을 실측했다. Host-facing transport는 MMIO
+fallback 없이 AF_VSOCK으로 고정한다. Camera↔AI metadata는 Host relay가 없는 EL2 queue
+구현을 사용한다.
 
 이 Phase는 실제 추론 모델을 통합하기 전에 다음 세 구간의 사용자 공간 API와 wire protocol을
 완성한다.
@@ -86,7 +94,7 @@ OP-TEE, TA, Secure Partition, FF-A activation과 Trusted Access 전용 debug int
 
 ### 3.2 Host-facing 공통 header
 
-wire header는 고정 폭 정수와 고정 byte order를 사용하며 다음 필드를 가진다.
+wire header는 고정 폭 정수와 E-1의 arm64 little-endian 고정 layout을 사용하며 다음 필드를 가진다.
 
 | 필드 | 용도 |
 |---|---|
@@ -118,7 +126,8 @@ payload는 message type별 고정 struct 또는 작은 상한을 가진 TLV로 �
 ### 3.4 Camera↔AI 전용 metadata/control channel
 
 Camera와 AI는 DMA-BUF와 별개로 `/dev/pvm-msg`와 `libpvm_message`를 사용한다. guest driver는
-고정 크기 message를 EL2의 receiver별 queue에 넣고 virtual IRQ로 수신자를 깨운다. 이 queue는
+고정 크기 message를 EL2의 receiver별 queue에 넣고 bounded poll로 수신한다. 성공한 recv-info는
+EL2에서 guest IRQ state에도 반영된다. 이 queue는
 DMA-BUF transfer event queue와 저장 공간, sequence, overflow 처리와 teardown state를 공유하지
 않는다. sibling pVM VSOCK 또는 Host userspace backend는 이 경로에 참여하지 않는다.
 
@@ -127,11 +136,11 @@ EL2가 두 guest 사이에서 복사한다. 이는 작은 control metadata의 �
 주장은 DMA-BUF frame backing에만 적용한다. queue가 가득 차면 기존 entry를 덮어쓰지 않고
 `-ENOSPC`를 반환하며 application이 deadline 안에서 재시도하거나 해당 frame을 취소한다.
 
-각 guest driver는 message 송수신용 page 하나를 guest↔EL2 전용 slot으로 등록한다. SEND HVC는
-slot offset과 실제 길이만 넘기고 EL2가 256-byte 상한, sender identity와 receiver policy를
-검사한 뒤 내부 queue에 복사한다. RECEIVE 시 EL2가 receiver slot에 복사하고 virtual IRQ를
-주입한다. 이 slot은 Host stage-2에 공유하지 않으며 driver close와 pVM teardown 때 EL2 mapping,
-queue entry와 page reference를 함께 회수한다.
+구현된 guest driver는 별도 공유 page를 만들지 않고 24-byte SMCCC register fragment로 message를
+EL2에 전달한다. EL2는 `BEGIN/CHUNK/COMMIT` 상태와 256-byte 상한, sender identity, receiver
+policy를 검사한 뒤 receiver별 64-entry queue에 조립한다. RECEIVE도 `INFO/CHUNK/POP` HVC로
+반환하고 수신 poll 시 virtual IRQ를 주입한다. 따라서 message slot의 Host mapping 자체가 없고,
+pVM teardown 때 EL2 queue와 미완성 staging fragment를 함께 zeroize한다.
 
 초기 message 집합은 다음과 같다.
 
@@ -176,16 +185,17 @@ struct pvm_frame_desc {
 	uint32_t flags;
 };
 
-int pvm_message_channel_open(enum pvm_endpoint peer,
-			     struct pvm_message_channel **out);
-int pvm_message_send(struct pvm_message_channel *channel,
-		     const struct pvm_message *message, int timeout_ms);
-int pvm_message_receive(struct pvm_message_channel *channel,
-			struct pvm_message *message, int timeout_ms);
+int pvm_message_open(void);
+int pvm_message_send(int fd, uint32_t peer_endpoint, const void *data,
+		     uint32_t length, uint64_t *sequence);
+int pvm_message_receive(int fd, uint32_t expected_sender, void *data,
+			uint32_t capacity, uint32_t *length,
+			uint64_t *sequence, uint32_t timeout_ms);
 ```
 
-`pvm_message_receive()`는 EL2가 확인한 sender endpoint를 함께 반환한다. application이 payload의
-role이나 endpoint 숫자만으로 sender를 판단하지 않는다. 또한 `libpvm_buffer` receive 결과와
+EL2가 확인한 sender endpoint는 receive ioctl로 반환되고 `pvm_message_receive()`가
+`expected_sender`와 대조한다. application이 payload의 role이나 endpoint 숫자만으로 sender를
+판단하지 않는다. 또한 `libpvm_buffer` receive 결과와
 guest driver UAPI를 확장해 imported DMA-BUF의 kernel-reported `actual_size`를 반환하고,
 descriptor의 `total_size` 검사는 이 값을 기준으로 수행한다.
 
@@ -223,15 +233,15 @@ AI는 다음 조건을 모두 확인한 뒤에만 buffer payload를 읽는다.
 
 ### P09B-0. VSOCK compatibility gate
 
-1. `pkvm-full-clang`에 `CONFIG_VSOCKETS`, `CONFIG_VIRTIO_VSOCKETS`,
-   `CONFIG_VHOST_VSOCK`을 built-in으로 활성화한다.
+1. `pkvm-full-clang`에 `CONFIG_VIRT_DRIVERS`, `CONFIG_ARM_PKVM_GUEST`,
+   `CONFIG_VSOCKETS`, `CONFIG_VIRTIO_VSOCKETS`, `CONFIG_VHOST_VSOCK`을 built-in으로
+   활성화한다.
 2. Host와 protected Linux guest에 같은 Image를 사용하는 현재 구성을 유지한다.
 3. `lkvm --protected --vsock <cid>` 한 대에서 Host↔guest bidirectional ping/ack를 실측한다.
 4. `/dev/vhost-vsock`, restricted DMA pool, virtqueue와 teardown 결과를 기록한다.
 
 이 gate가 실패하면 Trusted Access를 요구하지 않는다. 공개된 VSOCK 반환값과 로그로 원인을
-기록하고 Phase 09-b를 완료로 판정하지 않은 상태에서, Host가 endpoint인 control/result에
-한해서 kvmtool의 공개 MMIO mailbox를 transport adapter로 구현하는 후속 결정을 문서화한다.
+기록하고 VSOCK 구성 자체를 수정한다. Host-facing 경로를 MMIO mailbox로 전환하거나
 Camera↔AI 경로를 Host relay로 바꾸는 fallback은 허용하지 않는다.
 
 ### P09B-1. 공통 protocol/library
@@ -337,8 +347,8 @@ fault 시험은 availability 보장을 주장하기 위한 것이 아니라, 공
    payload와 `FRAME_DESC`가 없음을 확인한다.
 3. 기존 Phase 09 방식으로 transfer 중 Host stage-2의 frame backing 접근이 차단되는지 다시
    확인한다.
-4. guest↔EL2 message slot과 EL2 queue가 Host stage-2/Host userspace에 매핑되지 않는지
-   확인한다.
+4. register fragment 방식이라 guest↔EL2 공유 message slot이 존재하지 않고, EL2 queue가 Host
+   stage-2/Host userspace에 매핑되지 않는지 확인한다.
 5. Camera↔AI buffer 및 metadata 전송 중 Host relay/backend callback과 Host-side
    frame/descriptor copy counter가 0인지 확인한다. EL2 내부의 bounded descriptor copy는
    허용한다.
@@ -372,17 +382,19 @@ Host unit test, build 또는 VSOCK smoke만 통과한 상태는 완료가 아니
 구현하고 실측한 뒤에만 상태를 완료로 변경하고, 관련 소스와 문서를 Phase 완료 커밋으로
 commit한 후 현재 upstream에 push한다. 하나라도 실패하면 완료 커밋과 push를 하지 않는다.
 
-## 7. 예정 산출물
+## 7. 산출물
 
 - protocol과 public API: `work/src/tools/pvm-user-channel/include/`
 - 공통 C library와 Host Application: `work/src/tools/pvm-user-channel/`
 - Camera/AI workload adapter: `work/src/tools/pvm-buffer/`
-- Camera↔AI message API/driver: `work/src/tools/pvm-message/`
+- Camera↔AI message API/driver: `work/src/tools/pvm-user-channel/driver/`
 - EL2 message queue와 virtual IRQ: `work/src/pkvm-linux/`
-- kernel config와 guest/Host initramfs packaging: `work/src/tools/pvm-user-channel/build.sh`
-- unit/negative/E2E test와 실행 도구: `work/src/tools/pvm-user-channel/tests/`, `run.sh`
-- 실행 로그와 protocol evidence: `work/build/pvm-user-channel/`
-- 구현 후 검증 How-to와 결과: 이 디렉터리의 `VERIFICATION.md`, `RESULT.md`
+- kernel config와 guest/Host initramfs packaging: `work/src/tools/qemu/`,
+  `work/src/tools/pvm-buffer/build.sh`
+- unit/negative/E2E test와 실행 도구: `work/src/tools/pvm-user-channel/tests/`,
+  `work/src/tools/pvm-buffer/run-user-channel-*.sh`
+- 실행 로그와 protocol evidence: `work/build/pvm-buffer/`, `work/build/pvm-framework/`
+- 구현 및 검증 How-to와 결과: 이 디렉터리의 `README.md`, `VERIFICATION.md`
 
 ## 8. 한계
 
