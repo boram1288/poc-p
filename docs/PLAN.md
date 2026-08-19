@@ -362,13 +362,16 @@ fixture의 내용 비밀성, 실물 camera/GPU, 실제 inference와 model/tensor
 - Phase 설명과 판단 근거: `docs/phase-{nn}/`
 - Linux와 프로젝트 소스: `work/src/`
 - 커널, initramfs, selftest, 로그: `work/build/`
-- 커널 작업 트리: `work/src/pkvm-linux`, Git submodule로 커밋 SHA만 상위에 기록
+- 독립 외부 소스: `work/src/pkvm-linux`, `work/src/dtc`, `work/src/kvmtool`,
+  `work/src/qemu-phase08`, `work/src/optee-pkvm/u-boot`; Git submodule로 검증한 커밋 SHA만
+  상위에 기록
 - 모든 빌드 결과: Git 비추적
 - 프로젝트가 관리하는 실행/분석 도구: `work/src/tools/`, Git 추적
 
-커널 트리를 submodule로 둔 이유는 재현성이다. 상위 저장소의 각 커밋이 어떤 커널 커밋으로
-검증됐는지 SHA로 고정된다. 갱신할 때는 submodule 저장소에 먼저 push한 뒤 상위에서 새 SHA를
-커밋한다. 순서를 바꾸면 상위 저장소가 원격에 없는 커밋을 가리킨다.
+외부 소스를 submodule로 둔 이유는 재현성이다. 상위 저장소의 각 커밋이 어떤 kernel, dtc,
+kvmtool, QEMU와 U-Boot 커밋으로 검증됐는지 SHA로 고정된다. 갱신할 때는 submodule 저장소에
+먼저 push한 뒤 상위에서 새 SHA를 커밋한다. 순서를 바꾸면 상위 저장소가 원격에 없는 커밋을
+가리킨다.
 
 각 Phase 문서는 다음 섹션을 포함한다.
 

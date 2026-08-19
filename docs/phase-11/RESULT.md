@@ -121,13 +121,14 @@ Host/guest interface와 관찰 가능한 반환값으로 축소했고, 그 범�
 |---|---|
 | Phase 11 증거 기준 root | `e1629c18725ab833cd8aa3528b94c7ae19193ab1` |
 | pKVM Linux submodule | `6763e27c1ad00e0f5caf6e6cde5fcb33976e50e0` |
-| kvmtool | `6866a248977d16bc293c6f4f6609daa4f465b073` |
-| E-3 QEMU source | `5b3965e9c44ce7e8135f2a6ef7680eb563ab8bef` |
+| dtc submodule | `89c99ce78ac8e5ff10e829e21e6cffa12a6e1416` |
+| kvmtool submodule | `6866a248977d16bc293c6f4f6609daa4f465b073` |
+| E-3 QEMU submodule | `5b3965e9c44ce7e8135f2a6ef7680eb563ab8bef` |
 | Open Model Zoo | `7cc29a91472b4cb1289a11e655ba3e188e1d4a31` |
 | E-2 OP-TEE manifest/build | 4.7.0 / `dcff191dafb2` |
 | E-2 TF-A / OP-TEE OS | `842ce6391fec` / `86846f4fdf14` |
 | E-2 OP-TEE client/test/examples | `23c112a6f05c` / `a15be9eca1b7` / `14321a0607db` |
-| E-2 U-Boot | `b249e08ec9b7` |
+| E-2 U-Boot submodule | `b249e08ec9b7` |
 | kernel Image / config SHA-256 | `a58cf72f405d1c67266532b4a49bbf17ab5ea834962ea1a6cb84094f93efcdf4` / `7ef1e6b3d688f516ac9e98730ff65429d42d748bd2a835d59fe639c5898ac77e` |
 | E-3 QEMU / lkvm SHA-256 | `913b9b97ab9d47db5764d565faa945de5f14a1a39984fdb5c4cda321c920d384` / `9b718dd8c7fe239f3d73eeedffb4de3a0074696451724477ca9d67ce065707c4` |
 | OpenVINO / OpenCV / FFmpeg | 2024.6 / 4.10 / 6.1.1 |

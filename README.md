@@ -126,6 +126,11 @@ inference와 제품 수준 보안 보증은 포함하지 않는다.
 work/
 ├── src/
 │   ├── pkvm-linux/       Linux v6.18 + pKVM 패치 소스 트리 (submodule)
+│   ├── dtc/              kvmtool용 Device Tree Compiler (submodule)
+│   ├── kvmtool/          arm64 protected VM VMM fork (submodule)
+│   ├── qemu-phase08/     E-3 device assignment QEMU fork (submodule)
+│   ├── optee-pkvm/
+│   │   └── u-boot/       OP-TEE qemu_v8 U-Boot (submodule)
 │   └── tools/
 │       ├── analysis/     패치 집합 분석 도구
 │       ├── qemu/         protected 부팅 실행 도구
@@ -141,20 +146,22 @@ work/
 
 Phase 05 이후의 도구와 산출물은 각 Phase 문서에 명시한 경로에 추가한다.
 
-`work/src/tools`의 프로젝트 도구는 Git으로 관리한다. 커널 소스 트리는 submodule로 두어
-커밋 SHA만 기록한다. 빌드 산출물은 재생성 가능하므로 Git에서 제외한다. 모든 명령은 별도
-언급이 없으면 저장소 루트에서 실행한다.
+`work/src/tools`의 프로젝트 도구는 root Git으로 관리한다. 독립 Git 저장소인 커널, dtc,
+kvmtool, E-3 QEMU와 U-Boot 소스는 submodule로 두어 검증한 커밋 SHA만 기록한다. 빌드 산출물과
+OP-TEE Repo checkout의 나머지 프로젝트는 재생성 가능하므로 Git에서 제외한다. 모든 명령은
+별도 언급이 없으면 저장소 루트에서 실행한다.
 
 저장 공간 정책에 따라 커널 검증 입력은 `pkvm-full-clang`만 유지하며 삭제한
 `pkvm-full-gcc`를 복구하거나 gcc kernel 교차 검증을 수행하지 않는다.
 
-저장소를 처음 받을 때는 submodule을 partial clone으로 초기화한다. 커널 트리가 5.6GB를
-넘는다.
+저장소를 처음 받을 때는 모든 submodule을 partial clone으로 초기화한다. 커널 트리가 5.6GB를
+넘는다. kvmtool submodule은 접근 권한이 있는 SSH key가 필요하다.
 
 ```bash
 git clone git@github.com:boram1288/poc-p.git
 cd poc-p
-git submodule update --init --filter=blob:none work/src/pkvm-linux
+git submodule update --init --filter=blob:none
+git submodule status
 ```
 
 ## 다른 개발자 PC에서 재현하기
@@ -199,7 +206,7 @@ SSH key와 저장소 권한이 있으면 다음 명령을 사용한다.
 ```bash
 git clone git@github.com:boram1288/poc-p.git
 cd poc-p
-git submodule update --init --filter=blob:none work/src/pkvm-linux
+git submodule update --init --filter=blob:none
 ```
 
 공개 HTTPS 또는 credential helper를 사용할 수 있는 환경에서는 첫 명령을 다음과 같이 바꾼다.
@@ -207,7 +214,7 @@ git submodule update --init --filter=blob:none work/src/pkvm-linux
 ```bash
 git clone https://github.com/boram1288/poc-p.git
 cd poc-p
-git submodule update --init --filter=blob:none work/src/pkvm-linux
+git submodule update --init --filter=blob:none
 ```
 
 특정 결과를 정확히 재현할 때는 전달받은 root commit을 먼저 checkout한 다음 submodule을
@@ -216,9 +223,9 @@ git submodule update --init --filter=blob:none work/src/pkvm-linux
 
 ```bash
 git checkout --detach <ROOT_COMMIT>
-git submodule update --init --filter=blob:none work/src/pkvm-linux
+git submodule update --init --filter=blob:none
 git rev-parse HEAD
-git -C work/src/pkvm-linux rev-parse HEAD
+git submodule status
 ```
 
 Phase 11 완료 증거가 포함된 root 기준 commit은
@@ -227,22 +234,27 @@ Phase 11 완료 증거가 포함된 root 기준 commit은
 
 ```bash
 git merge-base --is-ancestor e1629c18725ab833cd8aa3528b94c7ae19193ab1 HEAD
-git submodule status work/src/pkvm-linux
+git submodule status
 ```
 
-고정된 pKVM Linux submodule revision은
-`6763e27c1ad00e0f5caf6e6cde5fcb33976e50e0`이다. `git submodule status`의 첫 글자가 `-`, `+`
-또는 `U`이면 초기화 누락, revision 불일치 또는 충돌 상태이므로 빌드를 시작하지 않는다.
+고정된 submodule revision은 아래 표와 같다. `git submodule status`의 첫 글자가 `-`, `+` 또는
+`U`이면 초기화 누락, revision 불일치 또는 충돌 상태이므로 빌드를 시작하지 않는다.
+
+| 경로 | 고정 revision |
+|---|---|
+| `work/src/pkvm-linux` | `6763e27c1ad00e0f5caf6e6cde5fcb33976e50e0` |
+| `work/src/dtc` | `89c99ce78ac8e5ff10e829e21e6cffa12a6e1416` |
+| `work/src/kvmtool` | `6866a248977d16bc293c6f4f6609daa4f465b073` |
+| `work/src/qemu-phase08` | `5b3965e9c44ce7e8135f2a6ef7680eb563ab8bef` |
+| `work/src/optee-pkvm/u-boot` | `b249e08ec9b71f9d0b4eb48e3e63f63e8366b7e6` |
 
 ### 3. Clone에 포함되는 것과 다시 생성할 것
 
 | 구분 | 경로 | 새 PC에서의 처리 |
 |---|---|---|
 | 프로젝트 source/문서 | `README.md`, `docs/`, `work/src/tools/` | root repository clone에 포함 |
-| pKVM Linux source | `work/src/pkvm-linux/` | submodule로 별도 초기화 |
-| OP-TEE/TF-A/U-Boot/Buildroot source | `work/src/optee-pkvm/` | Phase 06 bootstrap으로 다시 받음 |
-| E-3 custom QEMU source | `work/src/qemu-phase08/` | Phase 10 검증 문서의 고정 commit으로 다시 받음 |
-| arm64 kvmtool source | `work/src/kvmtool/` | Phase 10 검증 문서의 고정 commit으로 다시 받음 |
+| 독립 외부 source | `work/src/{pkvm-linux,dtc,kvmtool,qemu-phase08}/`, `work/src/optee-pkvm/u-boot/` | submodule로 고정 revision 초기화 |
+| OP-TEE/TF-A/Buildroot source | `work/src/optee-pkvm/`의 나머지 경로 | Phase 06 bootstrap으로 다시 받음 |
 | 공개 video/model/fixture | `work/build/vision-pipeline/` | Phase 10 fixture 준비 도구로 다시 받거나 생성 |
 | kernel/QEMU/initramfs/binary/log | `work/build/` | Git 비추적 영역이며 새 PC에서 모두 다시 생성 |
 
@@ -260,10 +272,10 @@ Host package, kernel, custom QEMU, arm64 kvmtool, 공개 fixture, 정상/fault p
 
 핵심 흐름은 다음과 같다.
 
-1. pKVM submodule을 고정 revision으로 초기화한다.
+1. 모든 source submodule을 상위 저장소가 고정한 revision으로 초기화한다.
 2. `work/build/pkvm-full-clang`에 clang 18 pKVM kernel을 빌드한다.
-3. QEMU fork `5b3965e9c44ce7e8135f2a6ef7680eb563ab8bef`을 빌드한다.
-4. arm64 kvmtool `6866a248977d16bc293c6f4f6609daa4f465b073`을 빌드한다.
+3. QEMU submodule `5b3965e9c44ce7e8135f2a6ef7680eb563ab8bef`을 빌드한다.
+4. arm64 kvmtool submodule `6866a248977d16bc293c6f4f6609daa4f465b073`을 빌드한다.
 5. 공개 video/model에서 30 frame fixture/oracle을 두 번 생성하고 digest를 비교한다.
 6. userspace protocol, guest module, Host/guest initramfs를 빌드한다.
 7. E-3 정상 pipeline, 장애 주입, Phase 09-b 회귀를 실행한다.
@@ -311,7 +323,8 @@ work/src/tools/optee-pkvm/mkrootfs.sh
 work/src/tools/optee-pkvm/run.sh
 ```
 
-`bootstrap.sh`는 OP-TEE manifest 4.7.0, TF-A, U-Boot와 Buildroot source를 네트워크에서 받는다.
+`bootstrap.sh`는 OP-TEE manifest 4.7.0, TF-A와 Buildroot source를 Repo로 받고, U-Boot는 상위
+저장소가 고정한 submodule revision으로 초기화한다.
 Phase 06-b까지 다시 검증할 때는 [Phase 06-b 검증](docs/phase-06-b/VERIFICATION.md)의 고정
 revision과 arm64 kvmtool 절차를 추가로 적용한다.
 

@@ -93,7 +93,7 @@ QEMU source를 처음 clone할 때는 GitHub HTTPS 접근이 필요하다. kvmto
 
 ## 3. 저장소와 revision 확인
 
-새 checkout이라면 다음과 같이 pKVM submodule까지 초기화한다.
+새 checkout이라면 다음과 같이 source submodule을 모두 초기화한다.
 
 ```bash
 rtk git clone git@github.com:boram1288/poc-p.git poc-p
@@ -107,8 +107,9 @@ rtk git clone git@github.com:boram1288/poc-p.git poc-p
 rtk git merge-base --is-ancestor \
   f3e17b57a58dd1c5db6c89a17eb6253b1b622206 HEAD
 
-# 대용량 kernel submodule은 partial clone으로 초기화한다.
-rtk git submodule update --init --filter=blob:none work/src/pkvm-linux
+# 대용량 kernel을 포함한 모든 source submodule을 partial clone으로 초기화한다.
+rtk git submodule update --init --filter=blob:none
+rtk git submodule status
 
 # 고정된 kernel revision인지 확인한다.
 rtk git -C work/src/pkvm-linux rev-parse HEAD
@@ -186,13 +187,11 @@ rtk sha256sum work/build/qemu-v10-aarch64/qemu-system-aarch64
 build path가 다르면 binary digest는 달라질 수 있으므로 source commit과 machine property를
 함께 확인한다.
 
-binary가 없으면 외부 source를 Git 비추적 경로에 clone하고 빌드한다.
+binary가 없으면 상위 저장소가 고정한 QEMU submodule을 초기화하고 빌드한다.
 
 ```bash
-rtk git clone --filter=blob:none \
-  --branch boram1288/phase08-pkvm-edu \
-  https://github.com/boram1288/qemu.git work/src/qemu-phase08
-rtk git -C work/src/qemu-phase08 checkout --detach \
+rtk git submodule update --init --filter=blob:none -- work/src/qemu-phase08
+rtk proxy test "$(rtk git -C work/src/qemu-phase08 rev-parse HEAD)" = \
   5b3965e9c44ce7e8135f2a6ef7680eb563ab8bef
 rtk mkdir -p work/build/qemu-v10-aarch64
 rtk env -C "$PWD/work/build/qemu-v10-aarch64" \
@@ -239,13 +238,11 @@ rtk git -C work/src/kvmtool rev-parse HEAD
 `6866a248977d16bc293c6f4f6609daa4f465b073`이다. 이미 이 조건을 만족하면 빌드를
 건너뛴다.
 
-처음 준비할 때는 권한이 있는 fork를 clone한다.
+처음 준비할 때는 권한이 있는 fork submodule을 초기화한다.
 
 ```bash
-rtk git clone --filter=blob:none \
-  --branch boram1288/phase07-kvmtool \
-  git@github.com:boram1288/kvmtools.git work/src/kvmtool
-rtk git -C work/src/kvmtool checkout --detach \
+rtk git submodule update --init --filter=blob:none -- work/src/kvmtool
+rtk proxy test "$(rtk git -C work/src/kvmtool rev-parse HEAD)" = \
   6866a248977d16bc293c6f4f6609daa4f465b073
 ```
 

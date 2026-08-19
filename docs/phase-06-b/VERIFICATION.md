@@ -97,15 +97,13 @@ KVMTOOL_DIR=$PROJECT_ROOT/work/src/kvmtool
 DTC_DIR=$PROJECT_ROOT/work/src/dtc
 TOOLCHAIN=$PROJECT_ROOT/work/src/optee-pkvm/toolchains/aarch64/bin/aarch64-linux-gnu-
 
-# dtc 저장소가 없으면 clone하고 검증한 commit으로 고정한다.
-test -d "$DTC_DIR/.git" || git clone \
-  https://git.kernel.org/pub/scm/utils/dtc/dtc.git "$DTC_DIR"
-git -C "$DTC_DIR" checkout 89c99ce78ac8e5ff10e829e21e6cffa12a6e1416
-
-# kvmtool 저장소가 없으면 clone하고 검증한 commit으로 고정한다.
-test -d "$KVMTOOL_DIR/.git" || git clone \
-  https://git.kernel.org/pub/scm/linux/kernel/git/will/kvmtool.git "$KVMTOOL_DIR"
-git -C "$KVMTOOL_DIR" checkout f67bc0bdae9433a9cfd05e65ea2c1bb6102566d9
+# 상위 저장소가 검증한 dtc와 kvmtool revision을 초기화한다.
+git submodule update --init --filter=blob:none -- \
+  work/src/dtc work/src/kvmtool
+test "$(git -C "$DTC_DIR" rev-parse HEAD)" = \
+  89c99ce78ac8e5ff10e829e21e6cffa12a6e1416
+test "$(git -C "$KVMTOOL_DIR" rev-parse HEAD)" = \
+  6866a248977d16bc293c6f4f6609daa4f465b073
 
 # protected-FFA 지원이 없을 때만 저장소의 패치를 적용한다.
 grep -q protected_ffa "$KVMTOOL_DIR/arm64/include/kvm/kvm-config-arch.h" || \

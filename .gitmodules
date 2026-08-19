@@ -2,3 +2,18 @@
 	path = work/src/pkvm-linux
 	url = https://github.com/boram1288/pkvm-linux.git
 	branch = pkvm-6.18-full
+[submodule "work/src/kvmtool"]
+	path = work/src/kvmtool
+	url = git@github.com:boram1288/kvmtools.git
+	branch = boram1288/phase07-kvmtool
+[submodule "work/src/dtc"]
+	path = work/src/dtc
+	url = https://git.kernel.org/pub/scm/utils/dtc/dtc.git
+	branch = master
+[submodule "work/src/optee-pkvm/u-boot"]
+	path = work/src/optee-pkvm/u-boot
+	url = https://github.com/u-boot/u-boot.git
+[submodule "work/src/qemu-phase08"]
+	path = work/src/qemu-phase08
+	url = https://github.com/boram1288/qemu.git
+	branch = boram1288/phase08-pkvm-edu
