@@ -84,6 +84,16 @@ PoC에서 검증하지 않는다.
 조사](docs/phase-08/hardware-candidates.md)와 [Phase 10 계획](docs/phase-10/README.md)에 있다.
 실장치와 실제 inference 검증은 후속 과제로 분리했다.
 
+## 최종 상태
+
+Phase 00~11을 완료했다. G-1~G-11과 G-10B의 12개 목표 및 위 성공 조건 6개는 모두
+**달성(PoC 범위)**으로 판정했다. 이 판정은 E-1/E-2 QEMU 기능·통합 환경, E-3 에뮬레이션
+역할 장치와 공개 fixture/oracle replay에 한정된다. 실물 USB camera/NVIDIA GPU, 실제 model
+inference와 제품 수준 보안 보증은 포함하지 않는다.
+
+목표별 증거, 환경, revision/digest, 알려진 warning과 후속 검증은
+[Phase 11 최종 결과](docs/phase-11/RESULT.md)에 정리했다.
+
 ## 문서 구조
 
 - [전체 수행 계획](docs/PLAN.md): 목표, Phase 순서, 완료 조건, 현재 상태와 남은 작업
@@ -103,6 +113,8 @@ PoC에서 검증하지 않는다.
   하나의 end-to-end session으로 묶는 구현·검증 계획
 - [Phase 10 Reference Scenario](docs/phase-10/README.md): 공개 객체 탐지 동영상 frame과
   detection oracle로 camera/GPU 역할을 재생한 end-to-end 구현·검증 결과
+- [Phase 11 최종 결과](docs/phase-11/RESULT.md): 목표 12개와 README 성공 조건 6개의 최종
+  판정, 환경별 증거, 검증 한계와 후속 과제
 - [work 디렉터리 안내](work/README.md): 소스와 빌드 산출물 관리 규칙
 
 위 성공 조건 6개는 수행 계획의 목표 ID 및 Phase에 매핑되어 있다. 매핑표는

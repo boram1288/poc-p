@@ -111,9 +111,9 @@ model/tensor 보호는 이 PoC에서 주장하지 않는다.
 
 | 프로필 | 목적 | 구성 | 담당 Phase | 상태 |
 |---|---|---|---|---|
-| E-1 기능 검증 | 커널/pVM 기능 경로 확인 | x86_64, QEMU 4.2.1 TCG, `virt,virtualization=on`, OP-TEE 없음 | 02~05, 07 | 사용 중 |
+| E-1 기능 검증 | 커널/pVM 기능 경로 확인 | x86_64, QEMU 4.2.1 TCG, `virt,virtualization=on`, OP-TEE 없음 | 02~05, 07 | 사용 완료 |
 | E-2 통합 검증 | Secure World 공존 확인 | QEMU 8.2.2, TF-A v2.13-rc0, OP-TEE 4.7.0, pKVM 커널 | 06 | 사용 완료 |
-| E-3 장치 할당 및 DMA 격리 검증 | 장치 할당, DMA 격리, fixture 기반 영상 분석 파이프라인 확인 | QEMU (SMMUv3 stage-2 지원), `virt,iommu=smmuv3`, pKVM 커널, 에뮬레이션 장치, 공개 객체 탐지 fixture | 08~10 | 구성 가능 |
+| E-3 장치 할당 및 DMA 격리 검증 | 장치 할당, DMA 격리, fixture 기반 영상 분석 파이프라인 확인 | QEMU (SMMUv3 stage-2 지원), `virt,iommu=smmuv3`, pKVM 커널, 에뮬레이션 장치, 공개 객체 탐지 fixture | 08~10 | 사용 완료 |
 
 E-1 결과는 E-2 또는 E-3의 결과를 대신하지 않는다.
 
@@ -173,7 +173,7 @@ DMA-BUF FD로 import한다. FF-A virtual instance 구현은 후속 표준화 과
 | 09 | pVM 간 DMA-BUF export/import | E-1, E-3 | 완료 | [phase-09](phase-09/README.md) |
 | 09-b | Host/Camera/AI 사용자 공간 end-to-end 통신 | E-1, E-3 | 완료 | [phase-09-b](phase-09-b/README.md) |
 | 10 | 공개 fixture 기반 Reference Scenario 통합 | E-3 | 완료 | [phase-10](phase-10/README.md) |
-| 11 | 결과 종합 및 요구사항 매핑 | - | 진행 중 | [phase-11](phase-11/README.md) |
+| 11 | 결과 종합 및 요구사항 매핑 | - | 완료 | [phase-11](phase-11/README.md) |
 
 Phase 05, 06, 07은 E-1과 E-2에서 병행할 수 있다. D-9 확정으로 Phase 08과 Phase 10도
 하드웨어 대기 없이 착수할 수 있다. Phase 08은 E-3 환경 구성만 끝나면 Phase 05, 06, 07과
@@ -354,6 +354,8 @@ fixture의 내용 비밀성, 실물 camera/GPU, 실제 inference와 model/tensor
 5. 미검증 항목과 후속 검증을 분리해 정리한다.
 
 완료 조건: 모든 주장에 실행 환경과 근거 로그가 연결되고 미검증 항목이 분리되어야 한다.
+
+최종 판정과 목표/성공 조건별 증거는 [Phase 11 결과](phase-11/RESULT.md)에 기록했다.
 
 ## 6. 산출물 규칙
 
