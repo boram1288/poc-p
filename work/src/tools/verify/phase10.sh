@@ -43,6 +43,12 @@ verify_log "E-3 정상 pipeline 실행 (30 frame)"
 env "${E3_ENV[@]}" "${VERIFY_ROOT}/work/src/tools/pvm-buffer/run-vision-pipeline.sh" \
   "${PIPE_LOG}" 360
 
+# run-vision-pipeline.sh/run-vision-fault.sh and the AF_VSOCK/user-channel/
+# pvm-framework wrappers reused below all print their own final "..._OK"
+# summary to their own stdout after re-reading the log, not into the log
+# file. Under `set -eu` each already exits non-zero on failure, so reaching
+# the next line means it passed; only check markers the guest/host actually
+# write into the log file itself.
 check_markers "${PIPE_LOG}" \
   "Found 2 assignable devices" \
   "PVM_VISION_CAMERA_REPLAY" \
@@ -55,8 +61,7 @@ check_markers "${PIPE_LOG}" \
   "PVM_VISION_HASH_REJECT_OK" \
   "PVM_VISION_MISMATCH_REJECT_OK" \
   "PVM_VISION_DUPLICATE_REPLAY_REJECT_OK" \
-  "PVM_VISION_E3_ENVIRONMENT_OK" \
-  "PVM_VISION_PIPELINE_OK"
+  "PVM_VISION_RC: host=0 ai=0 camera=0"
 
 for marker in PVM_VISION_CAMERA_FRAME_OK PVM_VISION_AI_FRAME_OK PVM_VISION_HOST_FRAME_OK; do
   count=$(grep -c "${marker}" "${PIPE_LOG}")
@@ -73,8 +78,7 @@ check_markers "${FAULT_LOG}" \
   "PVM_VISION_CAMERA_FAILURE" \
   "PVM_VISION_AI_FAILURE" \
   "PVM_VISION_HOST_FAILURE" \
-  "PVM_VISION_FAULT_RC: host=0 ai=0 camera=0" \
-  "PVM_VISION_FAULT_OK"
+  "PVM_VISION_FAULT_RC: host=0 ai=0 camera=0"
 check_mlocked_zero "${FAULT_LOG}"
 
 verify_log "Phase 09-b 전체 회귀 재실행"
@@ -89,10 +93,9 @@ PRIM_LOG="${VERIFY_ROOT}/work/build/pvm-framework/console-phase10-phase09b-primi
 PHASE09=1 PHASE09_ONLY=1 \
   "${VERIFY_ROOT}/work/src/tools/pvm-framework/run.sh" "${PRIM_LOG}" 900
 
-check_markers "${VSOCK_LOG}" "PVM_USER_VSOCK_SMOKE_OK"
-check_markers "${E2E_LOG}" "PVM_USER_CHANNEL_E2E_OK"
-check_markers "${UFAULT_LOG}" "PVM_USER_CHANNEL_FAULT_OK"
-check_markers "${PRIM_LOG}" "PVM_FRAMEWORK_RUN_OK" \
+check_markers "${VSOCK_LOG}" "PVM_USER_VSOCK_RC: host=0 guest=0"
+check_markers "${UFAULT_LOG}" "PVM_USER_FAULT_VALIDATION_OK"
+check_markers "${PRIM_LOG}" \
   "PVM_BUFFER_RESOURCE_RECOVERY_OK" "Mlocked:"
 
 verify_log "최종 kernel 오류 검사"
