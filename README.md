@@ -99,6 +99,8 @@ inference와 제품 수준 보안 보증은 포함하지 않는다.
 - [전체 수행 계획](docs/PLAN.md): 목표, Phase 순서, 완료 조건, 현재 상태와 남은 작업
 - [Phase 02~10 통합 검증 가이드](docs/VERIFICATION-GUIDE.md): `work/src/tools/verify/run-all.sh`로
   Phase 02부터 10까지 자동 재현/검증하는 진입 가이드
+- [Phase별 사용 이미지/바이너리 매트릭스](docs/PHASE-ARTIFACT-MATRIX.md): Phase마다 사용한
+  QEMU/OP-TEE/kernel/rootfs/앱/라이브러리/스크립트를 한 표로 정리
 - `docs/phase-00` ~ `docs/phase-11`: Phase별 절차, 완료 조건, 결과와 한계
   (02~08은 `README.md`와 `VERIFICATION.md`를 함께 참고)
 - [Phase 07 C VM 관리 프레임워크](docs/phase-07/userspace-vm-framework-design.md): public API,
