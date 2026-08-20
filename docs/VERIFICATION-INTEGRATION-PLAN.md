@@ -151,3 +151,6 @@ README.md의 "다른 개발자 PC에서 재현하기" 절은 이 신규 가이�
 | 일자 | 내용 |
 |---|---|
 | 2026-08-20 | 계획 수립 및 저장 |
+| 2026-08-20 | `work/src/tools/verify/lib.sh`, `phase02.sh`~`phase10.sh`, `run-all.sh` 작성 |
+| 2026-08-20 | Phase 02~10, 06-B, 09-B 전체 순차 실행 및 완료 marker 확인 (`work/build/verify/phase-*/DONE`). Phase 06 FF-A/OP-TEE 통합 결함 다수 수정, Phase 06-B semihosting symlink 문제 수정, Phase 07 edu 장치 결합 회귀 수정, Phase 09-B/10 wrapper marker 오검사 수정 |
+| 2026-08-20 | `docs/phase-{02..08}/VERIFICATION.md` 신규 작성, `docs/VERIFICATION-GUIDE.md` 작성, README.md 재현 절에 신규 가이드 연결 |

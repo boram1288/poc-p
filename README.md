@@ -97,7 +97,10 @@ inference와 제품 수준 보안 보증은 포함하지 않는다.
 ## 문서 구조
 
 - [전체 수행 계획](docs/PLAN.md): 목표, Phase 순서, 완료 조건, 현재 상태와 남은 작업
+- [Phase 02~10 통합 검증 가이드](docs/VERIFICATION-GUIDE.md): `work/src/tools/verify/run-all.sh`로
+  Phase 02부터 10까지 자동 재현/검증하는 진입 가이드
 - `docs/phase-00` ~ `docs/phase-11`: Phase별 절차, 완료 조건, 결과와 한계
+  (02~08은 `README.md`와 `VERIFICATION.md`를 함께 참고)
 - [Phase 07 C VM 관리 프레임워크](docs/phase-07/userspace-vm-framework-design.md): public API,
   controller, VM runner와 private KVM backend 설계 및 완료 조건
 - [Phase 08 장치 할당·DMA 격리 결과](docs/phase-08/README.md): PV IOMMU, QEMU edu 두 장치,
@@ -169,6 +172,11 @@ git submodule status
 이 절은 새 x86-64 Linux PC에서 저장소를 받고, Git에 포함되지 않은 산출물을 다시 생성해
 최종 PoC까지 검증하는 진입 가이드다. 검증 기준과 고정 revision/digest는
 [Phase 11 최종 결과](docs/phase-11/RESULT.md)를 따른다.
+
+Phase 02부터 10까지 순서대로 자동 재현/검증하려면 아래 절차를 읽는 대신
+[Phase 02~10 통합 검증 가이드](docs/VERIFICATION-GUIDE.md)와
+`work/src/tools/verify/run-all.sh`를 바로 사용해도 된다. 이 절의 나머지 부분은
+자동 스크립트가 내부에서 무엇을 하는지 수동 명령 단위로 이해하고 싶을 때 참고한다.
 
 ### 1. 권장 Host 환경
 
