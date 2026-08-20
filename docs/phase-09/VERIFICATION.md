@@ -7,6 +7,10 @@ DMA-BUF FD가 같은 backing을 관찰하는지 검증한다. Trusted Access 전
 Secure Partition, `--protected-ffa`)은 사용하지 않는다. 별도 설명이 없으면 저장소 루트에서
 명령을 실행한다.
 
+자동 재검증(`work/src/tools/verify/phase09.sh`): 통과 (2026-08-20). Phase 08이 빌드한
+E-3 QEMU/PV IOMMU 커널 설정을 재사용해 이 문서의 절차를 이 저장소 산출물로 다시 실행해
+동일하게 확인했다.
+
 ## 1. 작업 위치와 필수 파일 확인
 
 ```bash

@@ -22,6 +22,16 @@ Trusted Access 전용 기능, OP-TEE, TA와 Secure Partition은 요구하거나 
 - 입력/추론 대체: Open Model Zoo 동영상 frame replay와 사전 생성 detection oracle
 - Trusted Access: 요구하거나 사용하지 않음
 - How-to 순차 재검수: 통과 (2026-08-19)
+- 자동 재검증(`work/src/tools/verify/phase10.sh`): 통과 (2026-08-20). 아래 절차와
+  완료 조건을 이 저장소 산출물로 다시 실행해 동일하게 확인했다. 새 log는
+  `work/build/vision-pipeline/console-vision-pipeline-local.log`,
+  `work/build/vision-pipeline/console-vision-fault-local.log`,
+  `work/build/pvm-buffer/console-phase10-*.log`,
+  `work/build/pvm-framework/console-phase10-phase09b-primitive.log`에 있다. 무거운
+  E-3 QEMU 실행 직후 곧바로 `pvm-user-channel`의 `protocol_test`(1000ms 수신
+  타임아웃)를 재실행하면 시스템 자원 정리 지연으로 간헐적으로 실패하는 현상을
+  발견해, 재실행 전 5초 대기를 추가했다. 자세한 재현 절차는
+  [통합 검증 가이드](../VERIFICATION-GUIDE.md)를 참고한다.
 
 ## 1. 검증 범위 이해
 

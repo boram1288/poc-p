@@ -5,6 +5,12 @@
 - 환경: E-1 QEMU 위 pKVM Host와 `lkvm --protected` Camera/AI guest 2대
 - Host-facing transport: AF_VSOCK 전용(CID 4101/4102), MMIO fallback 없음
 - Camera↔AI metadata transport: `/dev/pvm-msg` → SMCCC register fragment → EL2 receiver queue
+- 자동 재검증(`work/src/tools/verify/phase09b.sh`): 통과 (2026-08-20). 아래 절차를
+  이 저장소 산출물로 다시 실행해 동일하게 확인했다. 새 log는
+  `work/build/pvm-buffer/console-pvm-vsock-release.log`,
+  `work/build/pvm-buffer/console-user-channel-e2e-final.log`,
+  `work/build/pvm-buffer/console-user-channel-fault-final2.log`,
+  `work/build/pvm-framework/console-phase09b-primitive-final.log`에 있다.
 
 ## 재현 명령
 
