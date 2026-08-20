@@ -35,3 +35,88 @@
   Normal World(pKVM Host/Guest)만으로 검증한다.
 - 상세 재현 명령과 완료 조건은 [통합 검증 가이드](VERIFICATION-GUIDE.md)와 각
   `docs/phase-{nn}/VERIFICATION.md`를 참고한다.
+
+## 모든 Phase를 한 번에 통합 재현할 때 사용할 산출물
+
+Phase 02~10을 **QEMU 한 프로세스**로 한 번에 통합할 수는 없다. Phase 06/06-B는
+TF-A(`bl1.bin`)가 BL2/BL31/BL32(OP-TEE)/BL33(U-Boot)를 순서대로 검증/기동하는
+Secure Monitor 부팅 경로를 쓰고, U-Boot가 `CONFIG_BOOTCOMMAND`로 자체적으로 커널을
+읽기 때문에 QEMU의 `-kernel`/`-initrd`가 아예 무시된다. 반면 나머지 Phase는
+`-kernel`/`-initrd`로 직접 부팅한다. 두 부팅 경로는 같은 QEMU 인스턴스 안에 공존할
+수 없다.
+
+대신 이 저장소는 **환경 프로파일 3개(E-1/E-2/E-3)** 로 나뉘고, 프로파일 안에서는
+이미 산출물을 공유/재사용한다. "통합 재현"의 실질적 의미는 프로파일별로 아래 최소
+산출물 한 벌씩만 준비하면 그 프로파일에 속한 모든 Phase를 다시 실행할 수 있다는
+뜻이다. `work/src/tools/verify/run-all.sh`가 정확히 이 순서로 실행한다.
+
+핵심 사실: **host kernel Image는 세 프로파일 전부가 물리적으로 같은 파일 하나**
+(`work/build/pkvm-full-clang/arch/arm64/boot/Image`)다. Phase 06이 켠
+`CONFIG_ARM_FFA_TRANSPORT`와 Phase 08이 켠 PV IOMMU/edu/DMA-share/VSOCK 옵션은
+서로 끄지 않고 같은 `.config`에 계속 누적되므로(`work/src/tools/qemu/
+configure-pv-iommu-kernel.sh`가 `--disable`하는 대상은 `ARM_SMMU_V3` 계열뿐),
+Phase 08까지 진행한 뒤의 최종 Image 하나로 E-1/E-2/E-3 어느 쪽으로도 재부팅할 수
+있다. 실제로 이 저장소의 현재 `.config`에 두 계열이 함께 켜져 있음을 확인했다.
+
+```text
+CONFIG_ARM_FFA_TRANSPORT=y        (Phase 06)
+CONFIG_ARM_SMMU_V3_PKVM_PV=y      (Phase 08)
+CONFIG_PKVM_PVIOMMU=y             (Phase 08)
+CONFIG_VFIO_PLATFORM=y            (Phase 08)
+CONFIG_PKVM_QEMU_EDU=y            (Phase 08)
+CONFIG_PKVM_PVM_DMA_SHARE=y       (Phase 08)
+CONFIG_VSOCKETS=y / VIRTIO_VSOCKETS=y / VHOST_VSOCK=y   (Phase 08)
+```
+
+달라지는 것은 QEMU 바이너리, 이 Image를 감싸는 방식(U-Boot용 `uImage`/
+`rootfs.cpio.uboot`로 감쌀지, 그대로 `-kernel`로 넘길지), 그리고 host/guest rootfs다.
+
+### 프로파일 E-1 (기본 pKVM, OP-TEE/장치 미사용) — Phase 03, 04, 05, 07, 09, 09-B
+
+| 항목 | 값 |
+|---|---|
+| 대상 Phase | 03, 04, 05, 07, 09, 09-B |
+| qemu | Host apt `qemu-system-aarch64` |
+| host kernel | `work/build/pkvm-full-clang/arch/arm64/boot/Image` (공용, Phase 08까지 진행한 최종본도 그대로 통과) |
+| host rootfs | Phase마다 다른 파일이지만 전부 같은 방식(BusyBox 정적 + 해당 Phase 바이너리)으로 재생성: `pkvm-qemu/initramfs.cpio.gz`, `pkvm-pvm/initramfs-pvm.cpio.gz`, `multi-pvm/initramfs-multi-pvm.cpio.gz`, `pvm-framework/initramfs-pvm-framework.cpio.gz`, `pvm-buffer/initramfs-pvm-buffer-host.cpio.gz` |
+| guest kernel/rootfs | Phase 09/09-B만 `lkvm`으로 위 host kernel Image를 nested guest로 재사용, guest rootfs는 `pvm-buffer/rootfs-pvm-buffer-guest.cpio.gz` |
+| 재빌드 필요 여부 | 이 프로파일 안에서는 Image를 다시 만들 필요가 없다. 각 rootfs만 해당 `mkinitramfs.sh`/`build.sh`로 새로 조립하면 된다 |
+
+### 프로파일 E-2 (OP-TEE Secure World, TF-A/U-Boot 부팅) — Phase 06, 06-B
+
+| 항목 | 값 |
+|---|---|
+| 대상 Phase | 06, 06-B |
+| qemu | Host apt `qemu-system-aarch64` (`-bios bl1.bin`, `secure=on,virtualization=on`) |
+| Secure World | OP-TEE 4.7.0-dev(`SPMC_AT_EL=1`, `CFG_NS_VIRTUALIZATION=y`), TF-A BL1/BL2/BL31, U-Boot(BL33) — 전부 `work/src/tools/optee-pkvm/{bootstrap.sh,build.sh}` 산출물 |
+| host kernel | 위와 같은 `work/build/pkvm-full-clang/.../Image`. Phase 06-B는 이 Image를 `mkimage`로 `uImage`로 한 번 더 감싼다(U-Boot `hostfs` semihosting 경로 전용, symlink 대신 반드시 `cp`로 배치) |
+| host rootfs | Phase 06: `optee-pkvm/rootfs-optee-pkvm.cpio.gz` → `rootfs.cpio.uboot`로 래핑. Phase 06-B: `optee-pkvm/rootfs-optee-pkvm-manual.cpio.gz` → 별도 `rootfs-phase06b.cpio.uboot`로 래핑(자동 실행 init 차이만 있고 나머지는 06과 동일) |
+| guest kernel/rootfs | 같은 Image를 `lkvm --protected-ffa`로 재사용, guest rootfs는 `optee-pkvm-guest/rootfs-optee-pkvm-guest.cpio.gz` (06/06-B 공용) |
+| 재빌드 필요 여부 | OP-TEE/TF-A/U-Boot/Buildroot는 한 번만 빌드하면 06과 06-B가 그대로 재사용한다 |
+
+### 프로파일 E-3 (장치 할당/DMA 격리, SMMUv3+edu) — Phase 08, 10
+
+| 항목 | 값 |
+|---|---|
+| 대상 Phase | 08, 10 |
+| qemu | `work/build/qemu-v10-aarch64/qemu-system-aarch64` (`qemu-phase08` submodule, v10.0.0, `iommu=smmuv3,pkvm-edu-assignment=on`, edu PCI 장치 2개) |
+| host kernel | 위와 같은 `work/build/pkvm-full-clang/.../Image`, PV IOMMU Kconfig 적용 후 재빌드된 상태(E-1/E-2와 파일 경로 동일) |
+| host rootfs | Phase 08: `pvm-framework/initramfs-pvm-framework.cpio.gz`(vfio-platform bind 로직 포함, E-1과 파일은 같지만 edu 장치가 있을 때만 관련 marker 출력). Phase 10: `pvm-buffer/initramfs-pvm-buffer-host.cpio.gz`(Phase 09-B와 동일 파일에 fixture만 추가) |
+| guest kernel/rootfs | Phase 08은 별도 guest 이미지 없이 bare-metal payload(`phase07-guest.img`)에 장치를 직접 할당. Phase 10은 같은 host kernel Image를 `lkvm`으로 재사용하고 guest rootfs는 `pvm-buffer/rootfs-pvm-buffer-guest.cpio.gz`(+ `frames.bin`/`oracle.bin`) |
+| 재빌드 필요 여부 | E-3 QEMU는 한 번만 빌드하면 08과 10이 그대로 재사용한다 |
+
+### 정리: 한 번에 준비해 두면 되는 최소 파일 목록
+
+```text
+work/build/pkvm-full-clang/arch/arm64/boot/Image   (Phase 02 빌드 + Phase 06/08 Kconfig 누적, 전 Phase 공용)
+work/build/qemu-v10-aarch64/qemu-system-aarch64    (Phase 08 빌드, E-3 전용, Phase 08/10 공용)
+work/src/kvmtool/lkvm                              (Phase 06 빌드, nested guest 기동에 쓰는 모든 Phase 공용)
+work/src/optee-pkvm/out/bin/bl1.bin 등 TF-A/OP-TEE 산출물   (Phase 06 빌드, E-2 전용, Phase 06/06-B 공용)
+optee-pkvm-guest/rootfs-optee-pkvm-guest.cpio.gz    (Phase 06 조립, E-2 guest 공용)
+pvm-buffer/{initramfs-pvm-buffer-host,rootfs-pvm-buffer-guest}.cpio.gz  (Phase 09-B 조립, Phase 09/09-B/10 공용)
+```
+
+나머지 host rootfs(Phase 03/04/05/07/08의 initramfs)는 파일 자체가 가볍고
+`mkinitramfs.sh`/`mkrootfs.sh` 실행 시간도 짧아 매번 새로 조립해도 부담이 적다.
+`work/src/tools/verify/run-all.sh`는 이 구조 그대로, DONE marker가 있는 Phase는
+건너뛰고 위 3개 프로파일의 공용 산출물을 자연스럽게 재사용한다.
