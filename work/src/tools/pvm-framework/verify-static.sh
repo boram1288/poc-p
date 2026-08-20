@@ -11,7 +11,7 @@ IMAGE_OUT="${OUTPUT_DIR}/images"
 
 "${SCRIPT_DIR}/build.sh"
 
-if rg -n '<linux/kvm.h>|/dev/kvm|ioctl\(|\bKVM_[A-Z0-9_]+' \
+if grep -rnE '<linux/kvm.h>|/dev/kvm|ioctl\(|\bKVM_[A-Z0-9_]+' \
 	"${SCRIPT_DIR}/include" "${SCRIPT_DIR}/lib" "${SCRIPT_DIR}/common" \
 	"${SCRIPT_DIR}/cli" "${SCRIPT_DIR}/daemon" "${SCRIPT_DIR}/tests" \
 	"${SCRIPT_DIR}/runner"; then

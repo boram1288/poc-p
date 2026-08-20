@@ -79,6 +79,26 @@ static void assigned_device_init(struct assigned_device *device)
 	device->mmio = MAP_FAILED;
 }
 
+/*
+ * assign_edu_device() only makes sense in the E-3 environment (QEMU
+ * virt,iommu=smmuv3,pkvm-edu-assignment=on with the edu PCI functions
+ * attached), which Phase 08 sets up. Phase 07's plain E-1 lifecycle test
+ * runs the exact same guest image under a QEMU machine with no edu devices
+ * at all, and this backend is shared by both. Previously assign_edu_device()
+ * was called unconditionally (guarded only by the phase09 image-name check),
+ * so Phase 07 always failed at the very first "discover" step with ENOENT.
+ * Skip device assignment entirely when the platform device simply isn't
+ * present, instead of treating "not present" as a fatal error.
+ */
+static bool edu_device_present(const char *platform_device)
+{
+	char path[256];
+
+	snprintf(path, sizeof(path), "/sys/bus/platform/devices/%s",
+		 platform_device);
+	return access(path, F_OK) == 0;
+}
+
 static int iommu_group_number(const char *platform_device)
 {
 	char path[256], link[256], *name;
@@ -427,6 +447,7 @@ int pvm_kvm_arm64_run(const char *role, const char *guest_image, int ready_fd)
 	size_t workload_size = 0;
 	int ret = 1;
 	bool phase09 = strstr(guest_image, "phase09-") != NULL;
+	bool edu_assigned = false;
 	bool phase09_owner_fault = strstr(guest_image,
 					 "phase09-owner-fault.img") != NULL;
 	bool phase09_receiver_teardown = strstr(guest_image,
@@ -454,8 +475,14 @@ int pvm_kvm_arm64_run(const char *role, const char *guest_image, int ready_fd)
 	memcpy(addr_gpa2hva(vm, WORKLOAD_GPA), workload, workload_size);
 	virt_map(vm, WORKLOAD_GPA, WORKLOAD_GPA, WORKLOAD_PAGES);
 	virt_map(vm, MMIO_GPA, MMIO_GPA, 1);
-	if (!phase09 && assign_edu_device(vm, &device, edu, role))
-		goto out;
+	if (!phase09 && edu_device_present(edu->platform_device)) {
+		if (assign_edu_device(vm, &device, edu, role))
+			goto out;
+		edu_assigned = true;
+	} else if (!phase09) {
+		printf("PVM_DEVICE_ASSIGN_SKIPPED: role=%s device=%s reason=not-present\n",
+		       role, edu->platform_device);
+	}
 	vm_init_descriptor_tables(vm);
 	kvm_for_each_vcpu(vm, iter)
 		vcpu_init_descriptor_tables(iter);
@@ -464,7 +491,15 @@ int pvm_kvm_arm64_run(const char *role, const char *guest_image, int ready_fd)
 			      !strcmp(role, "camera") ? 1 : 0, LEASE_GPA,
 			      phase09_scenario);
 	else
-		vcpu_args_set(vcpu, 5, MMIO_GPA, EDU_GPA,
+		/*
+		 * phase07_guest.S's own comment documents x1 as "assigned edu
+		 * MMIO (zero when absent)" and already skips every
+		 * device-touching instruction (cbz x21, .Lstarted) when it is
+		 * zero. Pass the real EDU_GPA only when assignment actually
+		 * happened; otherwise 0 so the guest takes that existing path
+		 * instead of touching an MMIO region nothing backs.
+		 */
+		vcpu_args_set(vcpu, 5, MMIO_GPA, edu_assigned ? EDU_GPA : 0,
 			      (uint64_t)device.pviommu_fd, edu->vsid, DMA_GPA);
 	set_boot_args(vcpu, WORKLOAD_GPA);
 

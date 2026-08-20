@@ -14,8 +14,7 @@ verify_log "C binaries, guest workload, guest image build 및 KVM 경계 검사"
 "${VERIFY_ROOT}/work/src/tools/pvm-framework/verify-static.sh"
 
 verify_log "framework, image, C test application 포함 E-1 initramfs 생성"
-BUSYBOX="${VERIFY_ROOT}/work/build/pvm-manager/initramfs-root/bin/busybox" \
-  "${VERIFY_ROOT}/work/src/tools/pvm-framework/mkinitramfs.sh"
+"${VERIFY_ROOT}/work/src/tools/pvm-framework/mkinitramfs.sh"
 
 LOG="${VERIFY_ROOT}/work/build/pvm-framework/console-pvm-framework-final.log"
 verify_log "pkvm-full-clang kernel로 QEMU 실행"

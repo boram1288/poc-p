@@ -310,6 +310,9 @@ _start:
 	movk	x9, #0x5452, lsl #48
 	str	x9, [x20]
 
+	/* No assigned device (x21 zero): nothing to verify post-revoke. */
+	cbz	x21, .Lcompleted
+
 	/* Camera teardown revokes the grant before the controller resumes AI. */
 	mov	x9, #0x18
 	cmp	x23, x9
