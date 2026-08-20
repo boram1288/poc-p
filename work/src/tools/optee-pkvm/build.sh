@@ -18,7 +18,16 @@ if [ ! -d "${HOST_TOOLS}/pyelftools/elftools" ]; then
 fi
 
 export PYTHONPATH="${HOST_TOOLS}/pyelftools${PYTHONPATH:+:${PYTHONPATH}}"
-export PATH="${SOURCE_DIR}/u-boot/scripts/dtc:${PATH}"
+
+# OP-TEE OS's device-tree build needs a `dtc` binary on PATH. The distro
+# package (device-tree-compiler) is not in the documented prerequisite list
+# and may be unavailable, so build the project's own dtc submodule (used
+# for kvmtool too) and put its output ahead of any system dtc.
+DTC_DIR="${PROJECT_ROOT}/work/src/dtc"
+if [ ! -x "${DTC_DIR}/dtc" ]; then
+	make -C "${DTC_DIR}" dtc -j"${JOBS}"
+fi
+export PATH="${DTC_DIR}:${SOURCE_DIR}/u-boot/scripts/dtc:${PATH}"
 
 make -C "${SOURCE_DIR}/build" aarch64-toolchain
 
