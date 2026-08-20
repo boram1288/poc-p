@@ -51,11 +51,20 @@ check_markers "${SMOKE_LOG}" "Found 2 assignable devices"
 
 verify_log "장치 할당/DMA 격리 시나리오 실행 (PHASE08=1)"
 LOG="${VERIFY_ROOT}/work/build/pvm-framework/console-phase08-share-final.log"
+# vfio-platform은 기본적으로 device의 reset function이 등록돼 있어야 probe에
+# 성공한다. QEMU edu 장치는 그런 reset 콜백이 없어 "-2" 오류로 probe가
+# 실패하므로 reset 요구를 끈다 (README의 최종 E-3 pipeline 명령과 동일).
 QEMU="${QEMU_BIN}" \
 MACHINE='virt,virtualization=on,gic-version=3,iommu=smmuv3,pkvm-edu-assignment=on' \
 CPU=max HYP_IOMMU_PAGES=4096 \
+CMDLINE_EXTRA='vfio_platform.reset_required=0' \
 QEMU_EXTRA_ARGS='-device edu,addr=2 -device edu,addr=3' \
 PHASE08=1 "${VERIFY_ROOT}/work/src/tools/pvm-framework/run.sh" "${LOG}" 900
+# run.sh itself exits non-zero (under `set -eu` above, aborting this script)
+# when its own required-marker check fails, so reaching this point already
+# means it printed PVM_FRAMEWORK_RUN_OK — but that line is run.sh's own
+# stdout summary, not something it writes into ${LOG}, so don't re-check it
+# against the log file here.
 
 check_markers "${LOG}" \
   "PVM_FRAMEWORK_VFIO_READY" \
@@ -70,8 +79,7 @@ check_markers "${LOG}" \
   "PVM_DMA_SHARE_UNAPPROVED_BLOCKED" \
   "PVM_DMA_SHARE_REVOKE_BLOCKED" \
   "PVM_DEVICE_DRIVER_OK" \
-  "PVM_DEVICE_REASSIGN_OK" \
-  "PVM_FRAMEWORK_RUN_OK"
+  "PVM_DEVICE_REASSIGN_OK"
 check_mlocked_zero "${LOG}"
 
 check_no_kernel_fault "${LOG}"
