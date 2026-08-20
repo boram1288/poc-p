@@ -26,12 +26,13 @@ mkdir -p "${KSELF_USR}" "${OVERRIDE_DIR}" "${OUTPUT_DIR}/bin"
 echo "== UAPI 헤더 설치: ${KSELF_USR} =="
 make -C "${KERNEL_SRC}" ARCH=arm64 INSTALL_HDR_PATH="${KSELF_USR}" headers_install
 
-# headers_install은 소스트리 안에 arch/arm64/include/generated/uapi를 남긴다.
-# 이 상태로는 이후 다른 Phase의 out-of-tree(O=...) 커널 빌드가 kbuild의
-# outputmakefile 검사("source tree is not clean")에서 거부된다. UAPI 헤더는
-# 이미 ${KSELF_USR}에 설치했으므로 소스트리의 in-tree 잔재만 정리한다.
-rm -rf "${KERNEL_SRC}/arch/arm64/include/generated" \
-       "${KERNEL_SRC}/include/generated" "${KERNEL_SRC}/usr/include"
+# kselftest의 Makefile.kvm은 INSTALL_HDR_PATH=$(top_srcdir)/usr로 고정되어 있어
+# 소스트리 자체의 usr/include를 참조한다. 아래 kselftest 빌드가 이를 쓸 수
+# 있도록, 소스트리 in-tree 잔재 정리(arch/arm64/include/generated,
+# include/generated, usr/include)는 kselftest 빌드가 끝난 뒤로 미룬다.
+# 이 정리는 이후 다른 Phase의 out-of-tree(O=...) 커널 빌드가 kbuild의
+# outputmakefile 검사("source tree is not clean")에서 거부되지 않게 하기 위함이다.
+make -C "${KERNEL_SRC}" ARCH=arm64 INSTALL_HDR_PATH="${KERNEL_SRC}/usr" headers_install
 
 cat > "${OVERRIDE_HDR}" <<'EOF'
 /* Phase 04 빌드 보충 헤더.
@@ -148,6 +149,11 @@ make -C "${KSELF}" OUTPUT="${KSELF_OUT}" ARCH=arm64 \
 
 file "${KSELF_OUT}/arm64/pkvm" | grep -q "statically linked"
 file "${KSELF_OUT}/arm64/hello_el2" | grep -q "statically linked"
+
+# UAPI 헤더는 이미 ${KSELF_USR}에 설치했으므로, kselftest 빌드가 끝난 지금
+# 소스트리의 in-tree 잔재만 정리한다.
+rm -rf "${KERNEL_SRC}/arch/arm64/include/generated" \
+       "${KERNEL_SRC}/include/generated" "${KERNEL_SRC}/usr/include"
 
 echo "== capcheck 정적 빌드 =="
 "${ARM_CC}" -static -O2 -isystem "${KSELF_USR}/include" \
