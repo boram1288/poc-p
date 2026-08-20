@@ -82,6 +82,11 @@ check_markers "${FAULT_LOG}" \
 check_mlocked_zero "${FAULT_LOG}"
 
 verify_log "Phase 09-b 전체 회귀 재실행"
+# 직전 E-3 QEMU(pipeline/fault) 종료 직후에는 시스템이 아직 안정화되지
+# 않아, protocol_test의 1000ms 수신 타임아웃이 간헐적으로 초과되어
+# 실패할 수 있다(실제 로직 결함이 아니라 시스템 자원 정리 지연에 의한
+# 타이밍 문제로 확인됨). 재시도 전 안정화 대기 시간을 둔다.
+sleep 5
 make -C "${VERIFY_ROOT}/work/src/tools/pvm-user-channel" test
 VSOCK_LOG="${VERIFY_ROOT}/work/build/pvm-buffer/console-phase10-vsock-regression.log"
 "${VERIFY_ROOT}/work/src/tools/pvm-buffer/run-vsock-smoke.sh" "${VSOCK_LOG}" 240
